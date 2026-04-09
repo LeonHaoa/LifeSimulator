@@ -457,7 +457,8 @@ body {
     rgba(10, 12, 18, 0.0)
   );
   background-size: 240% 240%;
-  animation: skyShift 2.2s ease-in-out infinite;
+  animation: skyShift 5s ease-in-out 1;
+  animation-fill-mode: both;
 }
 
 .year-transition .sun-orb {
@@ -469,7 +470,8 @@ body {
   top: 45%;
   background: radial-gradient(circle at 30% 30%, #fff4d8, #ffb45c 60%, rgba(255, 180, 92, 0.0) 72%);
   filter: blur(0.2px);
-  animation: sunPath 1.2s ease-in-out infinite;
+  animation: sunPath 5s ease-in-out 1;
+  animation-fill-mode: both;
 }
 
 .year-transition .moon-orb {
@@ -481,7 +483,8 @@ body {
   top: 52%;
   background: radial-gradient(circle at 30% 30%, #f2f5ff, #aab6ff 60%, rgba(170, 182, 255, 0.0) 75%);
   filter: blur(0.3px);
-  animation: moonPath 1.2s ease-in-out infinite;
+  animation: moonPath 5s ease-in-out 1;
+  animation-fill-mode: both;
 }
 
 .year-transition .caption {

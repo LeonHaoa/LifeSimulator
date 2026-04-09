@@ -16,7 +16,7 @@ import type { AttrKey } from "@/lib/constants";
 import { createInitialState } from "@/lib/engine/initial-state";
 
 type Phase = "name" | "play";
-type Step = "allocate" | "streaming" | "idle";
+type Step = "allocate" | "transition" | "streaming" | "idle";
 
 type AllocationMap = Partial<Record<AttrKey, number>>;
 
@@ -126,7 +126,7 @@ export function LifeDetailClient() {
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [milestone, setMilestone] = useState<string | null>(null);
-  const [transitioning, setTransitioning] = useState(false);
+  const transitionTimerRef = useRef<number | null>(null);
 
   // Slower client-side rendering: buffer deltas and type them out.
   const renderQueueRef = useRef<string>("");
@@ -160,6 +160,10 @@ export function LifeDetailClient() {
     return () => {
       renderQueueRef.current = "";
       flushingRef.current = false;
+      if (transitionTimerRef.current != null) {
+        window.clearTimeout(transitionTimerRef.current);
+        transitionTimerRef.current = null;
+      }
     };
   }, []);
 
@@ -206,32 +210,44 @@ export function LifeDetailClient() {
     setBusy(true);
     setStreamText("");
     setMilestone(null);
-    setTransitioning(true);
-    setStep("streaming");
+    setStep("transition");
 
     const prepared = applyAllocToState(state, alloc);
 
-    try {
+    const TRANSITION_MS = 5_000;
+    if (transitionTimerRef.current != null) {
+      window.clearTimeout(transitionTimerRef.current);
+      transitionTimerRef.current = null;
+    }
+
+    transitionTimerRef.current = window.setTimeout(() => {
+      transitionTimerRef.current = null;
+      setStep("streaming");
+
       renderQueueRef.current = "";
       flushingRef.current = false;
       streamStartAtRef.current = Date.now();
-      const result = await consumeYearStream(prepared, (t) => {
-        renderQueueRef.current += t;
-        flushRenderQueue();
-      });
-      setState(result.state);
-      if (result.yearSummary.milestoneMessage) {
-        setMilestone(result.yearSummary.milestoneMessage);
-      }
-      setStep("idle");
-      setAlloc({});
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "请求失败");
-      setStep("allocate");
-    } finally {
-      setBusy(false);
-      setTimeout(() => setTransitioning(false), 900);
-    }
+
+      void (async () => {
+        try {
+          const result = await consumeYearStream(prepared, (t) => {
+            renderQueueRef.current += t;
+            flushRenderQueue();
+          });
+          setState(result.state);
+          if (result.yearSummary.milestoneMessage) {
+            setMilestone(result.yearSummary.milestoneMessage);
+          }
+          setStep("idle");
+          setAlloc({});
+        } catch (e) {
+          setErr(e instanceof Error ? e.message : "请求失败");
+          setStep("allocate");
+        } finally {
+          setBusy(false);
+        }
+      })();
+    }, TRANSITION_MS);
   }, [state, alloc, canStartYear, flushRenderQueue]);
 
   const prepareNextYear = () => {
@@ -433,33 +449,32 @@ export function LifeDetailClient() {
                   </motion.div>
                 )}
 
+                {step === "transition" && (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                  >
+                    <h2 style={{ marginTop: "1.25rem" }}>下一年开启中…</h2>
+                    <div className="year-transition" style={{ marginTop: 8 }}>
+                      <div className="sky" aria-hidden="true" />
+                      <div className="sun-orb" aria-hidden="true" />
+                      <div className="moon-orb" aria-hidden="true" />
+                      <div className="caption">
+                        <div className="cap-title">开启下一年</div>
+                        <div className="cap-sub">
+                          日出日落之间，你又长大了一点点
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+
                 {step === "streaming" && (
                   <motion.div
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                   >
                     <h2 style={{ marginTop: "1.25rem" }}>这一年……</h2>
-                    <AnimatePresence>
-                      {transitioning && (
-                        <motion.div
-                          className="year-transition"
-                          initial={{ opacity: 0, scale: 0.98 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          exit={{ opacity: 0, scale: 0.98 }}
-                          transition={{ duration: 0.35 }}
-                        >
-                          <div className="sky" aria-hidden="true" />
-                          <div className="sun-orb" aria-hidden="true" />
-                          <div className="moon-orb" aria-hidden="true" />
-                          <div className="caption">
-                            <div className="cap-title">开启下一年</div>
-                            <div className="cap-sub">
-                              日出日落之间，你又长大了一点点
-                            </div>
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
                     <div className="stream-box stream-sun">
                       <div className="sun-overlay" aria-hidden="true" />
                       <div className="sun-light" aria-hidden="true" />
