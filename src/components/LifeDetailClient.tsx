@@ -126,7 +126,6 @@ export function LifeDetailClient() {
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [milestone, setMilestone] = useState<string | null>(null);
-  const holdTimerRef = useRef<number | null>(null);
 
   // Slower client-side rendering: buffer deltas and type them out.
   const renderQueueRef = useRef<string>("");
@@ -160,10 +159,6 @@ export function LifeDetailClient() {
     return () => {
       renderQueueRef.current = "";
       flushingRef.current = false;
-      if (holdTimerRef.current != null) {
-        window.clearInterval(holdTimerRef.current);
-        holdTimerRef.current = null;
-      }
     };
   }, []);
 
@@ -344,99 +339,75 @@ export function LifeDetailClient() {
                       }}
                     >
                       {mode === "gain"
-                        ? `下一年（${nextAge} 岁）可分配：${skillBudget} 点，剩余 ${remaining} 点。点击 +1，长按连加。`
+                        ? `下一年（${nextAge} 岁）可分配：${skillBudget} 点，剩余 ${remaining} 点。`
                         : mode === "lose"
-                          ? `下一年（${nextAge} 岁）需扣除：${Math.abs(skillBudget)} 点，剩余 ${remaining} 点。点击 -1，长按连扣（不允许扣到 0 以下）。`
+                          ? `下一年（${nextAge} 岁）需扣除：${Math.abs(skillBudget)} 点，剩余 ${remaining} 点（不允许扣到 0 以下）。`
                           : `下一年（${nextAge} 岁）不获得技能点，直接开启。`}
                     </p>
-                    <div className="skill-grid">
+                    <div className="skill-step-grid">
                       {ATTR_KEYS.map((k) => {
                         const delta = alloc[k] ?? 0;
-                        const canInc =
-                          mode === "gain" && remaining > 0;
-                        const canDec =
-                          mode === "lose" &&
-                          remaining > 0 &&
-                          state.attrs[k] + delta > 0;
+                        const canPlus = mode === "gain" && remaining > 0;
+                        const canMinus =
+                          (mode === "gain" && delta > 0) ||
+                          (mode === "lose" &&
+                            remaining > 0 &&
+                            state.attrs[k] + delta > 0);
 
-                        const active = delta !== 0;
-
-                        const stop = () => {
-                          if (holdTimerRef.current != null) {
-                            window.clearInterval(holdTimerRef.current);
-                          }
-                          holdTimerRef.current = null;
+                        const onPlus = () => {
+                          if (busy) return;
+                          if (!canPlus) return;
+                          setAlloc((prev) => ({ ...prev, [k]: (prev[k] ?? 0) + 1 }));
                         };
 
-                        const applyOnce = () => {
+                        const onMinus = () => {
+                          if (busy) return;
+                          if (!canMinus) return;
                           setAlloc((prev) => {
                             const cur = prev[k] ?? 0;
-                            if (mode === "gain") {
-                              if (!canInc) return prev;
-                              return { ...prev, [k]: cur + 1 };
+                            const next = cur - 1;
+                            if (next === 0) {
+                              // Remove key to keep alloc map small.
+                              const rest: AllocationMap = { ...prev };
+                              delete rest[k];
+                              return rest;
                             }
-                            if (mode === "lose") {
-                              if (!canDec) return prev;
-                              return { ...prev, [k]: cur - 1 };
-                            }
-                            return prev;
+                            return { ...prev, [k]: next };
                           });
                         };
 
-                        const startHold = () => {
-                          stop();
-                          applyOnce();
-                          holdTimerRef.current = window.setInterval(applyOnce, 90);
-                        };
-
-                        const disabled = mode === "none" || busy;
+                        const preview = clampAttr(state.attrs[k] + delta);
 
                         return (
-                          <button
-                            key={k}
-                            type="button"
-                            className={
-                              "skill-option" + (active ? " selected" : "")
-                            }
-                            disabled={disabled}
-                            onClick={applyOnce}
-                            onPointerDown={(e) => {
-                              if (disabled) return;
-                              (e.currentTarget as HTMLButtonElement).setPointerCapture(
-                                e.pointerId
-                              );
-                              startHold();
-                            }}
-                            onPointerUp={stop}
-                            onPointerCancel={stop}
-                            onPointerLeave={stop}
-                            aria-label={`${ATTR_LABELS[k]} ${mode === "lose" ? "扣点" : "加点"}`}
-                            style={{
-                              opacity:
-                                disabled ||
-                                (mode === "gain" && !canInc) ||
-                                (mode === "lose" && !canDec)
-                                  ? 0.55
-                                  : 1,
-                            }}
-                          >
-                            <div style={{ fontWeight: 650 }}>
-                              {ATTR_LABELS[k]}
+                          <div key={k} className="skill-step">
+                            <div className="skill-step-head">
+                              <div className="skill-step-label">{ATTR_LABELS[k]}</div>
+                              <div className="skill-step-val">{preview}</div>
                             </div>
-                            <div
-                              style={{
-                                color: "var(--muted)",
-                                fontSize: "0.75rem",
-                                marginTop: 4,
-                              }}
-                            >
-                              {mode === "gain"
-                                ? `+${delta}`
-                                : mode === "lose"
-                                  ? `${delta}`
-                                  : "—"}
+                            <div className="skill-step-actions">
+                              <button
+                                type="button"
+                                className="mini-btn"
+                                disabled={busy || !canMinus}
+                                onClick={onMinus}
+                                aria-label={`${ATTR_LABELS[k]} -1`}
+                              >
+                                -
+                              </button>
+                              <div className="skill-step-delta" aria-label="delta">
+                                {delta > 0 ? `+${delta}` : delta < 0 ? `${delta}` : "0"}
+                              </div>
+                              <button
+                                type="button"
+                                className="mini-btn"
+                                disabled={busy || !canPlus}
+                                onClick={onPlus}
+                                aria-label={`${ATTR_LABELS[k]} +1`}
+                              >
+                                +
+                              </button>
                             </div>
-                          </button>
+                          </div>
                         );
                       })}
                     </div>
