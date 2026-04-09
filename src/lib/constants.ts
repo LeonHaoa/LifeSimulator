@@ -29,8 +29,20 @@ export const ATTR_LABELS: Record<AttrKey, string> = {
   marriage: "婚姻",
 };
 
-/** Skill points granted before each new year (age advance). */
-export const SKILL_POINTS_PER_YEAR = 1;
+/**
+ * Skill points rule (based on the next age after advancing).
+ * - 1–30: gain `age` points
+ * - 31–40: gain 0
+ * - 41–59: gain 1
+ * - 60+: lose 2 (user must allocate the deductions)
+ */
+export function yearlySkillPoints(nextAge: number): number {
+  if (nextAge >= 60) return -2;
+  if (nextAge >= 41) return 1;
+  if (nextAge >= 31) return 0;
+  if (nextAge >= 1) return nextAge;
+  return 0;
+}
 
 export const LLM_TIMEOUT_MS = 12_000;
 

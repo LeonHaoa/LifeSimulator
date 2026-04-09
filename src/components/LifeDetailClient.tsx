@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import type { GameState } from "@/lib/schemas/game";
@@ -10,7 +10,7 @@ import {
   ATTR_LABELS,
   ATTR_MAX,
   SCHEMA_VERSION,
-  SKILL_POINTS_PER_YEAR,
+  yearlySkillPoints,
 } from "@/lib/constants";
 import type { AttrKey } from "@/lib/constants";
 import { createInitialState } from "@/lib/engine/initial-state";
@@ -18,15 +18,38 @@ import { createInitialState } from "@/lib/engine/initial-state";
 type Phase = "name" | "play";
 type Step = "allocate" | "streaming" | "idle";
 
-function applySkillPoint(state: GameState, key: AttrKey): GameState {
-  const nextVal = Math.min(
-    ATTR_MAX,
-    state.attrs[key] + SKILL_POINTS_PER_YEAR
-  );
+type AllocationMap = Partial<Record<AttrKey, number>>;
+
+function clampAttr(n: number): number {
+  return Math.max(0, Math.min(ATTR_MAX, n));
+}
+
+function sumAlloc(alloc: AllocationMap): number {
+  return Object.values(alloc).reduce((s, v) => s + (v ?? 0), 0);
+}
+
+function primaryKeyFromAlloc(alloc: AllocationMap): AttrKey | undefined {
+  let best: { k: AttrKey; v: number } | null = null;
+  for (const k of ATTR_KEYS) {
+    const v = alloc[k] ?? 0;
+    if (v === 0) continue;
+    const score = Math.abs(v);
+    if (!best || score > Math.abs(best.v)) best = { k, v };
+  }
+  return best?.k;
+}
+
+function applyAllocToState(state: GameState, alloc: AllocationMap): GameState {
+  let attrs = { ...state.attrs };
+  for (const k of ATTR_KEYS) {
+    const delta = alloc[k] ?? 0;
+    if (!delta) continue;
+    attrs = { ...attrs, [k]: clampAttr(attrs[k] + delta) };
+  }
   return {
     ...state,
-    attrs: { ...state.attrs, [key]: nextVal },
-    lastSkillAllocation: key,
+    attrs,
+    lastSkillAllocation: primaryKeyFromAlloc(alloc),
   };
 }
 
@@ -98,11 +121,46 @@ export function LifeDetailClient() {
   const [step, setStep] = useState<Step>("allocate");
   const [nameInput, setNameInput] = useState("");
   const [state, setState] = useState<GameState | null>(null);
-  const [selectedSkill, setSelectedSkill] = useState<AttrKey | null>(null);
+  const [alloc, setAlloc] = useState<AllocationMap>({});
   const [streamText, setStreamText] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [milestone, setMilestone] = useState<string | null>(null);
+  const holdTimerRef = useRef<number | null>(null);
+
+  // Slower client-side rendering: buffer deltas and type them out.
+  const renderQueueRef = useRef<string>("");
+  const flushingRef = useRef(false);
+
+  const flushRenderQueue = useCallback(() => {
+    if (flushingRef.current) return;
+    flushingRef.current = true;
+    const tick = () => {
+      const q = renderQueueRef.current;
+      if (!q) {
+        flushingRef.current = false;
+        return;
+      }
+      // 1–2 chars per frame gives a clear "process" feel.
+      const take = Math.min(2, q.length);
+      const piece = q.slice(0, take);
+      renderQueueRef.current = q.slice(take);
+      setStreamText((prev) => prev + piece);
+      window.setTimeout(tick, 24);
+    };
+    tick();
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      renderQueueRef.current = "";
+      flushingRef.current = false;
+      if (holdTimerRef.current != null) {
+        window.clearInterval(holdTimerRef.current);
+        holdTimerRef.current = null;
+      }
+    };
+  }, []);
 
   const beginLife = () => {
     setErr(null);
@@ -111,7 +169,7 @@ export function LifeDetailClient() {
       setState(s);
       setPhase("play");
       setStep("allocate");
-      setSelectedSkill(null);
+      setAlloc({});
       setStreamText("");
       setMilestone(null);
     } catch (e) {
@@ -119,39 +177,64 @@ export function LifeDetailClient() {
     }
   };
 
-  const confirmYear = useCallback(async () => {
-    if (!state || !selectedSkill) return;
+  const nextAge = state ? state.age + 1 : 1;
+  const skillBudget = useMemo(() => yearlySkillPoints(nextAge), [nextAge]);
+  const spent = useMemo(() => sumAlloc(alloc), [alloc]);
+  const remaining = useMemo(() => {
+    if (skillBudget >= 0) return Math.max(0, skillBudget - spent);
+    // budget is negative: user must allocate -2 total (e.g. -2).
+    return Math.max(0, Math.abs(skillBudget) - Math.abs(spent));
+  }, [skillBudget, spent]);
+
+  const mode = useMemo<"gain" | "none" | "lose">(() => {
+    if (skillBudget > 0) return "gain";
+    if (skillBudget < 0) return "lose";
+    return "none";
+  }, [skillBudget]);
+
+  const canStartYear = useMemo(() => {
+    if (!state || busy) return false;
+    if (mode === "none") return true;
+    return remaining === 0;
+  }, [state, busy, mode, remaining]);
+
+  const startYear = useCallback(async () => {
+    if (!state) return;
+    if (!canStartYear) return;
     setErr(null);
     setBusy(true);
     setStreamText("");
     setMilestone(null);
     setStep("streaming");
 
-    const prepared = applySkillPoint(state, selectedSkill);
+    const prepared = applyAllocToState(state, alloc);
 
     try {
+      renderQueueRef.current = "";
+      flushingRef.current = false;
       const result = await consumeYearStream(prepared, (t) => {
-        setStreamText((prev) => prev + t);
+        renderQueueRef.current += t;
+        flushRenderQueue();
       });
       setState(result.state);
       if (result.yearSummary.milestoneMessage) {
         setMilestone(result.yearSummary.milestoneMessage);
       }
       setStep("idle");
-      setSelectedSkill(null);
+      setAlloc({});
     } catch (e) {
       setErr(e instanceof Error ? e.message : "请求失败");
       setStep("allocate");
     } finally {
       setBusy(false);
     }
-  }, [state, selectedSkill]);
+  }, [state, alloc, canStartYear, flushRenderQueue]);
 
   const prepareNextYear = () => {
     setStep("allocate");
     setStreamText("");
     setMilestone(null);
-    setSelectedSkill(null);
+    setAlloc({});
   };
 
   const exportJson = () => {
@@ -193,7 +276,7 @@ export function LifeDetailClient() {
             <h2>创建角色</h2>
             <p style={{ margin: 0, color: "var(--muted)", fontSize: "0.9rem" }}>
               进入详情页后，将随机生成八大维度初始值（0–100），每年可先分配
-              {SKILL_POINTS_PER_YEAR} 点再推进剧情。
+              技能点再推进剧情（规则与年龄相关）。
             </p>
             <input
               value={nameInput}
@@ -246,9 +329,7 @@ export function LifeDetailClient() {
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
                   >
-                    <h2 style={{ marginTop: "1.25rem" }}>
-                      分配 {SKILL_POINTS_PER_YEAR} 点
-                    </h2>
+                    <h2 style={{ marginTop: "1.25rem" }}>开启下一年</h2>
                     <p
                       style={{
                         color: "var(--muted)",
@@ -256,34 +337,118 @@ export function LifeDetailClient() {
                         marginTop: 0,
                       }}
                     >
-                      选择本年将点数加在哪一项上，确认后将流式展示这一年经历（并呼应你的选择）。
+                      {mode === "gain"
+                        ? `下一年（${nextAge} 岁）可分配：${skillBudget} 点，剩余 ${remaining} 点。点击 +1，长按连加。`
+                        : mode === "lose"
+                          ? `下一年（${nextAge} 岁）需扣除：${Math.abs(skillBudget)} 点，剩余 ${remaining} 点。点击 -1，长按连扣（不允许扣到 0 以下）。`
+                          : `下一年（${nextAge} 岁）不获得技能点，直接开启。`}
                     </p>
                     <div className="skill-grid">
-                      {ATTR_KEYS.map((k) => (
-                        <label
-                          key={k}
-                          className={
-                            "skill-option" +
-                            (selectedSkill === k ? " selected" : "")
+                      {ATTR_KEYS.map((k) => {
+                        const delta = alloc[k] ?? 0;
+                        const canInc =
+                          mode === "gain" && remaining > 0;
+                        const canDec =
+                          mode === "lose" &&
+                          remaining > 0 &&
+                          state.attrs[k] + delta > 0;
+
+                        const active = delta !== 0;
+
+                        const stop = () => {
+                          if (holdTimerRef.current != null) {
+                            window.clearInterval(holdTimerRef.current);
                           }
-                        >
-                          <input
-                            type="radio"
-                            name="skill"
-                            checked={selectedSkill === k}
-                            onChange={() => setSelectedSkill(k)}
-                          />
-                          {ATTR_LABELS[k]}
-                        </label>
-                      ))}
+                          holdTimerRef.current = null;
+                        };
+
+                        const applyOnce = () => {
+                          setAlloc((prev) => {
+                            const cur = prev[k] ?? 0;
+                            if (mode === "gain") {
+                              if (!canInc) return prev;
+                              return { ...prev, [k]: cur + 1 };
+                            }
+                            if (mode === "lose") {
+                              if (!canDec) return prev;
+                              return { ...prev, [k]: cur - 1 };
+                            }
+                            return prev;
+                          });
+                        };
+
+                        const startHold = () => {
+                          stop();
+                          applyOnce();
+                          holdTimerRef.current = window.setInterval(applyOnce, 90);
+                        };
+
+                        const disabled = mode === "none" || busy;
+
+                        return (
+                          <button
+                            key={k}
+                            type="button"
+                            className={
+                              "skill-option" + (active ? " selected" : "")
+                            }
+                            disabled={disabled}
+                            onClick={applyOnce}
+                            onPointerDown={(e) => {
+                              if (disabled) return;
+                              (e.currentTarget as HTMLButtonElement).setPointerCapture(
+                                e.pointerId
+                              );
+                              startHold();
+                            }}
+                            onPointerUp={stop}
+                            onPointerCancel={stop}
+                            onPointerLeave={stop}
+                            aria-label={`${ATTR_LABELS[k]} ${mode === "lose" ? "扣点" : "加点"}`}
+                            style={{
+                              opacity:
+                                disabled ||
+                                (mode === "gain" && !canInc) ||
+                                (mode === "lose" && !canDec)
+                                  ? 0.55
+                                  : 1,
+                            }}
+                          >
+                            <div style={{ fontWeight: 650 }}>
+                              {ATTR_LABELS[k]}
+                            </div>
+                            <div
+                              style={{
+                                color: "var(--muted)",
+                                fontSize: "0.75rem",
+                                marginTop: 4,
+                              }}
+                            >
+                              {mode === "gain"
+                                ? `+${delta}`
+                                : mode === "lose"
+                                  ? `${delta}`
+                                  : "—"}
+                            </div>
+                          </button>
+                        );
+                      })}
                     </div>
                     <button
                       type="button"
                       className="primary-btn"
-                      disabled={!selectedSkill || busy}
-                      onClick={() => void confirmYear()}
+                      disabled={!canStartYear}
+                      onClick={() => void startYear()}
                     >
-                      确定
+                      {mode === "gain"
+                        ? remaining === 0
+                          ? "开启下一年"
+                          : "先分配完点数"
+                        : mode === "lose"
+                          ? remaining === 0
+                            ? "开启下一年"
+                            : "先扣完点数"
+                          : "开启下一年"}
                     </button>
                   </motion.div>
                 )}
@@ -294,7 +459,11 @@ export function LifeDetailClient() {
                     animate={{ opacity: 1 }}
                   >
                     <h2 style={{ marginTop: "1.25rem" }}>这一年……</h2>
-                    <div className="stream-box">{streamText}</div>
+                    <div className="stream-box stream-sun">
+                      <div className="sun-overlay" aria-hidden="true" />
+                      <div className="sun-light" aria-hidden="true" />
+                      <div className="stream-text">{streamText}</div>
+                    </div>
                     {busy && (
                       <p
                         style={{
@@ -322,7 +491,7 @@ export function LifeDetailClient() {
                       onClick={prepareNextYear}
                       style={{ marginTop: 12 }}
                     >
-                      下一年
+                      继续（回到加点/扣点）
                     </button>
                   </motion.div>
                 )}
