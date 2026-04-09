@@ -131,6 +131,8 @@ export function LifeDetailClient() {
   // Slower client-side rendering: buffer deltas and type them out.
   const renderQueueRef = useRef<string>("");
   const flushingRef = useRef(false);
+  const streamTargetMsRef = useRef(20_000);
+  const streamStartAtRef = useRef<number>(0);
 
   const flushRenderQueue = useCallback(() => {
     if (flushingRef.current) return;
@@ -141,12 +143,15 @@ export function LifeDetailClient() {
         flushingRef.current = false;
         return;
       }
-      // 1–2 chars per frame gives a clear "process" feel.
-      const take = Math.min(2, q.length);
+      const elapsed = Date.now() - (streamStartAtRef.current || Date.now());
+      const remainingMs = Math.max(0, streamTargetMsRef.current - elapsed);
+      // Aim to finish around target duration, but keep it readable.
+      const perCharMs = Math.max(12, Math.min(90, remainingMs / q.length));
+      const take = Math.max(1, Math.min(3, Math.floor(36 / perCharMs)));
       const piece = q.slice(0, take);
       renderQueueRef.current = q.slice(take);
       setStreamText((prev) => prev + piece);
-      window.setTimeout(tick, 24);
+      window.setTimeout(tick, perCharMs);
     };
     tick();
   }, []);
@@ -212,6 +217,7 @@ export function LifeDetailClient() {
     try {
       renderQueueRef.current = "";
       flushingRef.current = false;
+      streamStartAtRef.current = Date.now();
       const result = await consumeYearStream(prepared, (t) => {
         renderQueueRef.current += t;
         flushRenderQueue();
