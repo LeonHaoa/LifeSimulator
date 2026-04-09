@@ -1,0 +1,56 @@
+[
+  {
+    "id": "fallback-breath",
+    "tier": "common",
+    "weight": 1,
+    "tags": ["fallback"],
+    "conditions": {},
+    "deltas": {},
+    "title": "又混过了一年"
+  },
+  {
+    "id": "brick",
+    "tier": "common",
+    "weight": 8,
+    "tags": ["work", "poor"],
+    "conditions": { "wealthMax": 35 },
+    "deltas": { "wealth": 1, "health": -1 },
+    "title": "工地搬砖"
+  },
+  {
+    "id": "debut",
+    "tier": "rare",
+    "weight": 3,
+    "tags": ["showbiz"],
+    "conditions": { "looksMin": 75, "ageMin": 16 },
+    "deltas": { "looks": 1, "wealth": 2 },
+    "title": "被星探递名片"
+  },
+  {
+    "id": "gaokao",
+    "tier": "common",
+    "weight": 6,
+    "tags": ["school"],
+    "conditions": { "ageMin": 17, "ageMax": 19, "wealthMax": 60 },
+    "deltas": { "luck": 1, "health": -1 },
+    "title": "高三，卷子比人高"
+  },
+  {
+    "id": "tag-bonus-after-work",
+    "tier": "common",
+    "weight": 10,
+    "tags": ["callback"],
+    "conditions": { "requiresRecentTag": "work" },
+    "deltas": { "wealth": 1 },
+    "title": "工头觉得你手速快，多给一盒饭"
+  },
+  {
+    "id": "easter-name-long",
+    "tier": "rare",
+    "weight": 50,
+    "tags": ["easter"],
+    "conditions": { "nameMinChars": 4 },
+    "deltas": { "luck": 1 },
+    "title": "名字够长，算命先生多送半句"
+  }
+]
