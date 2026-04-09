@@ -1,23 +1,26 @@
+import { ATTR_MAX } from "@/lib/constants";
 import type { GameState } from "@/lib/schemas/game";
 import type { GameEvent } from "./types";
 
 function clamp(n: number): number {
-  return Math.max(0, Math.min(100, n));
+  return Math.max(0, Math.min(ATTR_MAX, n));
 }
 
 export function applyEventDeltas(
   attrs: GameState["attrs"],
   picked: GameEvent[]
 ): GameState["attrs"] {
-  let { looks, wealth, health, luck } = attrs;
+  let next = { ...attrs };
   for (const e of picked) {
     const d = e.deltas;
-    if (d.looks != null) looks = clamp(looks + d.looks);
-    if (d.wealth != null) wealth = clamp(wealth + d.wealth);
-    if (d.health != null) health = clamp(health + d.health);
-    if (d.luck != null) luck = clamp(luck + d.luck);
+    (Object.keys(d) as (keyof typeof d)[]).forEach((k) => {
+      const delta = d[k];
+      if (delta != null && k in next) {
+        next = { ...next, [k]: clamp(next[k] + delta) };
+      }
+    });
   }
-  return { looks, wealth, health, luck };
+  return next;
 }
 
 export function mergeRecentTags(
@@ -25,12 +28,12 @@ export function mergeRecentTags(
   picked: GameEvent[],
   max = 10
 ): string[] {
-  const next = [...prev];
+  const out = [...prev];
   for (const e of picked) {
     for (const t of e.tags) {
       if (t === "fallback") continue;
-      if (!next.includes(t)) next.push(t);
+      if (!out.includes(t)) out.push(t);
     }
   }
-  return next.slice(-max);
+  return out.slice(-max);
 }

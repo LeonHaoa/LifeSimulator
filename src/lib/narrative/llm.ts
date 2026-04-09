@@ -3,6 +3,8 @@ import {
   LLM_MAX_RETRIES,
   LLM_RETRY_DELAY_MS,
 } from "@/lib/constants";
+import type { AttrKey } from "@/lib/constants";
+import { skillLabel } from "./skill-flavor";
 import { LlmNarrativeJsonSchema } from "@/lib/schemas/game";
 
 function sleep(ms: number) {
@@ -13,6 +15,7 @@ export async function fetchLlmNarrative(input: {
   name: string;
   age: number;
   eventIds: string[];
+  skillKey?: AttrKey;
 }): Promise<string | null> {
   const key = process.env.OPENAI_API_KEY?.trim();
   if (!key) return null;
@@ -22,6 +25,15 @@ export async function fetchLlmNarrative(input: {
     "https://api.openai.com/v1";
   const model = process.env.OPENAI_MODEL || "gpt-4o-mini";
 
+  const userPayload: Record<string, unknown> = {
+    name: input.name,
+    age: input.age,
+    eventIds: input.eventIds,
+  };
+  if (input.skillKey) {
+    userPayload.skillFocus = skillLabel(input.skillKey);
+  }
+
   const body = {
     model,
     temperature: 0.4,
@@ -30,15 +42,11 @@ export async function fetchLlmNarrative(input: {
       {
         role: "system",
         content:
-          '你是中式吐槽叙事机。只输出 JSON：{"text":"..."}。1–6句中文，幽默损，不要说教。',
+          '你是中式吐槽叙事机。只输出 JSON：{"text":"..."}。3–8句中文，幽默损；若给出 skillFocus，要在结尾自然呼应这个维度（快乐/健康等），不要说教。',
       },
       {
         role: "user",
-        content: JSON.stringify({
-          name: input.name,
-          age: input.age,
-          eventIds: input.eventIds,
-        }),
+        content: JSON.stringify(userPayload),
       },
     ],
   };

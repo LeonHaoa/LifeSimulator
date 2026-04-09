@@ -4,11 +4,20 @@ import type { GameState } from "@/lib/schemas/game";
 import { loadEvents } from "./events";
 
 const base: GameState = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   name: "测",
   runSeed: 777,
   age: 0,
-  attrs: { looks: 50, wealth: 20, health: 50, luck: 50 },
+  attrs: {
+    happiness: 50,
+    health: 50,
+    wealth: 20,
+    career: 50,
+    study: 50,
+    social: 50,
+    love: 50,
+    marriage: 50,
+  },
   recentTags: [],
   milestonesShown: {},
   history: [],
@@ -36,7 +45,16 @@ it("marks engineFallback when candidate pool was empty", () => {
   const blocked: GameState = {
     ...base,
     age: 5,
-    attrs: { looks: 1, wealth: 1, health: 1, luck: 1 },
+    attrs: {
+      happiness: 1,
+      health: 1,
+      wealth: 1,
+      career: 1,
+      study: 1,
+      social: 1,
+      love: 1,
+      marriage: 1,
+    },
   };
   const r = advanceYear(blocked, onlyFallback);
   expect(r.engineFallback).toBe(true);

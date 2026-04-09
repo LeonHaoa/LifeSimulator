@@ -15,8 +15,10 @@ describe("buildNarrative", () => {
       age: 3,
       eventIds: ["x"],
       eventTitles: ["测试事件"],
+      skillKey: "happiness",
     });
     expect(r.fallback).toBe(true);
     expect(r.text).toContain("张三");
+    expect(r.text).toContain("快乐");
   });
 });

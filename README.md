@@ -19,7 +19,10 @@ cp .env.example .env.local
 npm run dev
 ```
 
-浏览器打开 `http://localhost:3000`。
+浏览器打开 `http://localhost:3000`：
+
+- **`/`** — 16:9 欢迎页（`public/welcome-hero.png`），点 **开局** 进入详情。
+- **`/life`** — 人生成长详情：输入名字 → 八大维度随机初值（0–100）→ 每年先 **+1 技能点** 选维度 → **确定** 后 **流式** 展示当年叙事（`POST /api/year/stream`）；无 Key 时流式输出模板文案。
 
 ## 环境变量
 
@@ -36,14 +39,19 @@ npm run dev
 
 ## API
 
-### `POST /api/year`
+当前 **`schemaVersion`: 2**；角色属性为八维（快乐、健康、财富、事业、学业、人际关系、爱情、婚姻），单维 **0–10000**，创建时随机 **0–100**。推进年份前客户端写入 **`state.lastSkillAllocation`** 并先把该维 **+1**（受上限约束）。
 
-- **Body：** `{ "schemaVersion": 1, "stream": false, "state": GameState }`  
-  - `stream`：**预留**，当前版本忽略，恒为非流式 JSON。
-- **成功：** `200` + `{ schemaVersion, state, yearSummary }`（含 `narrative`、`fallback`、`engineFallback`、可选 `milestoneMessage`）。
-- **非法 JSON / 校验失败：** `400`（与「玩法闭环仍 200」不冲突）。
+### `POST /api/year/stream`（详情页默认）
 
-单次请求内顺序：**引擎 → LLM（最多 3 次 outbound：首次 + 2 次重试，单次超时默认 12s）→ 失败则模板**；**年龄只 +1 一次**。
+- **Body：** `{ "schemaVersion": 2, "stream": true, "state": GameState }`
+- **响应：** `text/event-stream`，事件：`{ type: "delta", text }` 叙事片段；`{ type: "final", payload }` 完整 `YearApiResponse`；`{ type: "done" }`。
+
+### `POST /api/year`（非流式 JSON，仍可用）
+
+- **Body：** `{ "schemaVersion": 2, "state": GameState }`
+- **成功：** `200` + 完整 JSON。
+
+单次请求内顺序：**引擎 → LLM 流式（若可）否则模板流式输出**；**年龄只 +1 一次**。
 
 ## 导出存档
 

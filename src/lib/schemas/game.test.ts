@@ -3,11 +3,20 @@ import { GameStateSchema } from "./game";
 
 it("parses minimal valid GameState", () => {
   const parsed = GameStateSchema.parse({
-    schemaVersion: 1,
+    schemaVersion: 2,
     name: "张三",
     runSeed: 42,
     age: 0,
-    attrs: { looks: 50, wealth: 50, health: 50, luck: 50 },
+    attrs: {
+      happiness: 10,
+      health: 20,
+      wealth: 30,
+      career: 40,
+      study: 50,
+      social: 60,
+      love: 70,
+      marriage: 80,
+    },
     recentTags: [],
     milestonesShown: {},
     history: [],

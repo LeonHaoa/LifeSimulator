@@ -38,6 +38,7 @@ export function advanceYear(
     runSeed: state.runSeed,
     age: nextAge,
     attrs,
+    lastSkillAllocation: undefined,
     recentTags,
     milestonesShown: { ...state.milestonesShown },
     history: state.history,

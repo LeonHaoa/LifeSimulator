@@ -1,4 +1,7 @@
-import { SCHEMA_VERSION } from "@/lib/constants";
+import {
+  SCHEMA_VERSION,
+  ATTR_INITIAL_MAX,
+} from "@/lib/constants";
 import { hashNameToRunSeed, normalizePlayerName } from "@/lib/rng/seeds";
 import { createMulberry32 } from "@/lib/rng/mulberry32";
 import type { GameState } from "@/lib/schemas/game";
@@ -13,8 +16,9 @@ export function validateNewName(raw: string): string {
   return normalizePlayerName(t);
 }
 
-function rollAttr(rng: () => number): number {
-  return 15 + Math.floor(rng() * 71);
+/** Uniform random integer in [0, ATTR_INITIAL_MAX] inclusive. */
+function rollInitial(rng: () => number): number {
+  return Math.floor(rng() * (ATTR_INITIAL_MAX + 1));
 }
 
 export function createInitialState(rawName: string): GameState {
@@ -22,17 +26,24 @@ export function createInitialState(rawName: string): GameState {
   const runSeed = hashNameToRunSeed(rawName);
   const rng = createMulberry32((runSeed ^ 0x9e3779b9) >>> 0);
 
+  const attrs = {
+    happiness: rollInitial(rng),
+    health: rollInitial(rng),
+    wealth: rollInitial(rng),
+    career: rollInitial(rng),
+    study: rollInitial(rng),
+    social: rollInitial(rng),
+    love: rollInitial(rng),
+    marriage: rollInitial(rng),
+  };
+
   return {
     schemaVersion: SCHEMA_VERSION,
     name,
     runSeed,
     age: 0,
-    attrs: {
-      looks: rollAttr(rng),
-      wealth: rollAttr(rng),
-      health: rollAttr(rng),
-      luck: rollAttr(rng),
-    },
+    attrs,
+    lastSkillAllocation: undefined,
     recentTags: [],
     milestonesShown: {},
     history: [],

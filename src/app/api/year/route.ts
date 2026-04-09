@@ -33,6 +33,7 @@ export async function POST(req: Request) {
   }
 
   try {
+    const skillAlloc = parsed.data.state.lastSkillAllocation;
     const events = loadEvents();
     const { nextState: advanced, pickedEvents, engineFallback } = advanceYear(
       parsed.data.state,
@@ -44,6 +45,7 @@ export async function POST(req: Request) {
       age: advanced.age,
       eventIds: pickedEvents.map((e) => e.id),
       eventTitles: pickedEvents.map((e) => e.title),
+      skillKey: skillAlloc,
     });
 
     const { milestonesShown, message: milestoneMessage } = applyMilestone(
@@ -61,6 +63,7 @@ export async function POST(req: Request) {
           eventIds: pickedEvents.map((e) => e.id),
           narrative: narrative.text,
           fallback: narrative.fallback,
+          skillAllocation: skillAlloc,
         },
       ],
     };

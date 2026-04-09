@@ -1,5 +1,5 @@
-import { GameClient } from "@/components/GameClient";
+import { WelcomeScreen } from "@/components/WelcomeScreen";
 
-export default function Page() {
-  return <GameClient />;
+export default function HomePage() {
+  return <WelcomeScreen />;
 }

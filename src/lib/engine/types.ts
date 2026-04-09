@@ -1,14 +1,22 @@
 import type { GameState } from "@/lib/schemas/game";
 
 export type EventConditions = {
-  looksMin?: number;
-  looksMax?: number;
+  happinessMin?: number;
+  happinessMax?: number;
   wealthMin?: number;
   wealthMax?: number;
   healthMin?: number;
   healthMax?: number;
-  luckMin?: number;
-  luckMax?: number;
+  careerMin?: number;
+  careerMax?: number;
+  studyMin?: number;
+  studyMax?: number;
+  socialMin?: number;
+  socialMax?: number;
+  loveMin?: number;
+  loveMax?: number;
+  marriageMin?: number;
+  marriageMax?: number;
   ageMin?: number;
   ageMax?: number;
   nameMinChars?: number;
@@ -16,10 +24,14 @@ export type EventConditions = {
 };
 
 export type AttrDeltas = Partial<{
-  looks: number;
-  wealth: number;
+  happiness: number;
   health: number;
-  luck: number;
+  wealth: number;
+  career: number;
+  study: number;
+  social: number;
+  love: number;
+  marriage: number;
 }>;
 
 export type GameEvent = {
