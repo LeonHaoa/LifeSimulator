@@ -126,6 +126,7 @@ export function LifeDetailClient() {
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [milestone, setMilestone] = useState<string | null>(null);
+  const [transitioning, setTransitioning] = useState(false);
 
   // Slower client-side rendering: buffer deltas and type them out.
   const renderQueueRef = useRef<string>("");
@@ -205,6 +206,7 @@ export function LifeDetailClient() {
     setBusy(true);
     setStreamText("");
     setMilestone(null);
+    setTransitioning(true);
     setStep("streaming");
 
     const prepared = applyAllocToState(state, alloc);
@@ -228,6 +230,7 @@ export function LifeDetailClient() {
       setStep("allocate");
     } finally {
       setBusy(false);
+      setTimeout(() => setTransitioning(false), 900);
     }
   }, [state, alloc, canStartYear, flushRenderQueue]);
 
@@ -436,6 +439,27 @@ export function LifeDetailClient() {
                     animate={{ opacity: 1 }}
                   >
                     <h2 style={{ marginTop: "1.25rem" }}>这一年……</h2>
+                    <AnimatePresence>
+                      {transitioning && (
+                        <motion.div
+                          className="year-transition"
+                          initial={{ opacity: 0, scale: 0.98 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.98 }}
+                          transition={{ duration: 0.35 }}
+                        >
+                          <div className="sky" aria-hidden="true" />
+                          <div className="sun-orb" aria-hidden="true" />
+                          <div className="moon-orb" aria-hidden="true" />
+                          <div className="caption">
+                            <div className="cap-title">开启下一年</div>
+                            <div className="cap-sub">
+                              日出日落之间，你又长大了一点点
+                            </div>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
                     <div className="stream-box stream-sun">
                       <div className="sun-overlay" aria-hidden="true" />
                       <div className="sun-light" aria-hidden="true" />
@@ -468,7 +492,7 @@ export function LifeDetailClient() {
                       onClick={prepareNextYear}
                       style={{ marginTop: 12 }}
                     >
-                      继续（回到加点/扣点）
+                      下一年
                     </button>
                   </motion.div>
                 )}

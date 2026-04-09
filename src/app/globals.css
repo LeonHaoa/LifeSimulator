@@ -383,6 +383,129 @@ body {
   animation: lightSweep 4.6s linear infinite;
 }
 
+/* Year transition overlay */
+@keyframes skyShift {
+  0% {
+    background-position: 0% 50%;
+    filter: saturate(1.05);
+  }
+  50% {
+    background-position: 100% 50%;
+    filter: saturate(1.15);
+  }
+  100% {
+    background-position: 0% 50%;
+    filter: saturate(1.05);
+  }
+}
+
+@keyframes sunPath {
+  0% {
+    transform: translate(-30%, 10%) scale(0.9);
+    opacity: 0.0;
+  }
+  15% {
+    opacity: 0.9;
+  }
+  50% {
+    transform: translate(10%, -10%) scale(1.02);
+    opacity: 1;
+  }
+  85% {
+    opacity: 0.85;
+  }
+  100% {
+    transform: translate(45%, 15%) scale(0.92);
+    opacity: 0.0;
+  }
+}
+
+@keyframes moonPath {
+  0% {
+    transform: translate(55%, 25%) scale(0.85);
+    opacity: 0.0;
+  }
+  40% {
+    opacity: 0.0;
+  }
+  60% {
+    opacity: 0.6;
+  }
+  100% {
+    transform: translate(25%, 5%) scale(0.95);
+    opacity: 0.0;
+  }
+}
+
+.year-transition {
+  position: relative;
+  height: 120px;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: #0a0c12;
+  margin-bottom: 0.75rem;
+}
+
+.year-transition .sky {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    120deg,
+    rgba(255, 194, 102, 0.22),
+    rgba(91, 140, 255, 0.18),
+    rgba(10, 12, 18, 0.0)
+  );
+  background-size: 240% 240%;
+  animation: skyShift 2.2s ease-in-out infinite;
+}
+
+.year-transition .sun-orb {
+  position: absolute;
+  width: 84px;
+  height: 84px;
+  border-radius: 999px;
+  left: 10%;
+  top: 45%;
+  background: radial-gradient(circle at 30% 30%, #fff4d8, #ffb45c 60%, rgba(255, 180, 92, 0.0) 72%);
+  filter: blur(0.2px);
+  animation: sunPath 1.2s ease-in-out infinite;
+}
+
+.year-transition .moon-orb {
+  position: absolute;
+  width: 62px;
+  height: 62px;
+  border-radius: 999px;
+  right: 10%;
+  top: 52%;
+  background: radial-gradient(circle at 30% 30%, #f2f5ff, #aab6ff 60%, rgba(170, 182, 255, 0.0) 75%);
+  filter: blur(0.3px);
+  animation: moonPath 1.2s ease-in-out infinite;
+}
+
+.year-transition .caption {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0 1rem;
+  z-index: 2;
+  text-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+.year-transition .cap-title {
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.year-transition .cap-sub {
+  margin-top: 0.25rem;
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.75);
+}
+
 .history-list {
   list-style: none;
   margin: 0;
