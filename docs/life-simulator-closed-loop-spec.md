@@ -2,6 +2,8 @@
 
 面向 **3 天级交付** 与 **面试评审**（0→1 跑通、系统设计、可扩展/鲁棒、多轮与流式 AI）。**目标部署：Cloudflare Pages（Workers 运行时）** —— 技术选型与 API 实现须以该运行时为前提。本文档合并：**主 Prompt**、**评判映射**、**前后端语言与仓库策略**、**随机种子设计**、**Cloudflare 约束**。
 
+**与功能设计的关系：** 已落地的交互与错误语义以 **`docs/specs/2026-04-09-life-simulator-features-design.md`** 为准（含：断网可玩、**方案 A** 缺 Key 仍 HTTP 200 + 降级叙事、超时重试与 **禁止重复加岁**、流式 **S1**、无限年 + 70/80/90/100 提示、先非流式 + 预留流式、LLM 输入仅事件 id 等）。本文主 Prompt 已尽量对齐；若有歧义，以前述功能设计为准。
+
 ---
 
 ## 1. 前后端语言与架构建议
@@ -110,12 +112,12 @@ packages/shared/   # 可选：共享类型与 Zod schema
 | **2. 扩展 / 鲁棒 / AI 边界** | 新事件低耦合；异常有路径 | 超时、Zod 校验、降级、空池保底；`schemaVersion` |
 | **3. 多轮 + AI 优化** | 长会话正确；流式体感 | 50+ 年点击；SSE/Stream + 非流式 fallback |
 
-**自检清单：**
+**自检清单：**（逐项定义见功能设计 **`docs/specs/2026-04-09-life-simulator-features-design.md` §6**）
 
-1. 断网能否玩（叙事降级）？  
-2. 无效/缺失 API Key 是否仍 200 + 本地叙事？  
-3. 叙事超时是否不白屏、不重复加岁？  
-4. 流式半道断开是否不把半段写入不可恢复 state？
+1. 断网能否玩（叙事降级）？ — **已定：能。**  
+2. 无效/缺失 API Key 是否仍 **HTTP 200** + 本地叙事？ — **已定：方案 A，是**（非 401/500 挡整条链路）。  
+3. 叙事超时是否不白屏、不重复加岁？ — **已定：须加载/降级；禁止重复加岁；可重试；草稿丢失则回退推进前节点。**  
+4. 流式半道断开是否不把半段写入不可恢复 state？ — **已定：策略 S1**（半段不入库；回退快照；不重复加岁）。
 
 ---
 
@@ -144,14 +146,14 @@ packages/shared/   # 可选：共享类型与 Zod schema
 - 新事件以数据文件扩展为主，核心抽签逻辑稳定；条件可扩展（tag 交集、数值阈值）。
 - LLM：timeout（如 8～15s）、有限重试、错误分类；响应 **Zod 校验**；失败降级。
 - 输入校验：名字长度、非法字符、state `schemaVersion`。
-- 空事件池：**保底事件** + `fallback: true` 可观测；年度上限或终止状态明确。
+- 空事件池：**保底事件** + `fallback: true` 可观测；**无强制寿命上限**（可持续推进直至用户新开一局）；**70 / 80 / 90 / 100** 岁可各触发一次性里程碑提示。
 
 ### 3. 多轮无 bug 与 AI 优化（加分硬指标）
 - 多轮：年龄单调、无重复扣减；双击防抖或 `requestId` 幂等（可选）。
-- **流式（必选其一）**：SSE（`text/event-stream`）或 NDJSON；前端 `fetch` + `ReadableStream` 或 EventSource；结束 `done` 事件；保留非流式路径。
+- **流式：** 第一版可 **仅非流式**；须 **预留** `stream` / 流式端点及类型；README 写明后续在 Cloudflare 上补 SSE 或 NDJSON 并实测。若已启用流式：须满足 **S1**（半段不写入已提交 state、断开回退、不重复加岁）。
 
 ### 技术栈与部署目标
-优先 **TypeScript + Next.js（App Router）** 单仓；引擎可抽到 `packages/engine`。**生产部署目标为 Cloudflare Pages（Workers）**：服务端逻辑禁止使用与 Workers 不兼容的 Node 专有 API；事件数据构建期内联；LLM 用 `fetch` + `AbortSignal`；流式用 `ReadableStream` 并在 CF 环境实测。
+优先 **TypeScript + Next.js（App Router）** 单仓；引擎可抽到 `packages/engine`。**生产部署目标为 Cloudflare Pages（Workers）**：服务端逻辑禁止使用与 Workers 不兼容的 Node 专有 API；事件数据构建期内联；LLM 用 `fetch` + `AbortSignal`；**先保证非流式在生产可用**；流式启用后用 `ReadableStream` 并在 CF 实测（与功能设计分期一致）。
 
 ### 交付物
 - GitHub：README（架构图、环境变量、种子与复现说明、**Cloudflare 构建与绑定步骤**）、`.env.example`。
@@ -167,7 +169,7 @@ packages/shared/   # 可选：共享类型与 Zod schema
 
 ## 5. 给评委的一句话摘要
 
-> **随机与玩法由确定性种子 + 事件引擎保证可复现与可测**；**LLM 仅叙事层且可降级**；**年度 API 契约稳定**，并具备 **SSE 与弱网/错误边界**，支撑多轮无 bug 会话。默认 **单仓 Next 全栈**；**生产部署以 Cloudflare Workers 为约束做选型**，避免 Node 专有依赖，并在 CF 上完成构建与流式实测。
+> **随机与玩法由确定性种子 + 事件引擎保证可复现与可测**；**LLM 仅叙事层且可降级**；**年度 API 契约稳定**；弱网/缺 Key 走 **HTTP 200 + 降级叙事（方案 A）**；**先非流式上线，预留 SSE/流式** 与 **S1** 状态边界，支撑多轮无 bug 会话。默认 **单仓 Next 全栈**；**生产部署以 Cloudflare Workers 为约束做选型**。
 
 ---
 
@@ -175,3 +177,4 @@ packages/shared/   # 可选：共享类型与 Zod schema
 
 - 初版：闭环 Prompt、评判映射、前后端/仓库建议、随机种子分层与引擎约束。
 - 修订：**目标部署 Cloudflare Pages（Workers）**；新增 §1.4 选型约束与部署验收；同步主 Prompt 与评委摘要。
+- 修订：与 **`docs/specs/2026-04-09-life-simulator-features-design.md`** 对齐 — 自检清单可测定义、主 Prompt 中寿命/流式/错误语义、评委摘要。
