@@ -13,6 +13,18 @@ describe("buildNarrative", () => {
     const r = await buildNarrative({
       name: "张三",
       age: 3,
+      runSeed: 1,
+      attrs: {
+        happiness: 10,
+        health: 10,
+        wealth: 10,
+        career: 10,
+        study: 10,
+        social: 10,
+        love: 10,
+        marriage: 10,
+      },
+      historyForSkills: [],
       eventIds: ["x"],
       eventTitles: ["测试事件"],
       skillKey: "happiness",

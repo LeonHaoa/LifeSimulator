@@ -43,6 +43,9 @@ export async function POST(req: Request) {
     const narrative = await buildNarrative({
       name: advanced.name,
       age: advanced.age,
+      runSeed: advanced.runSeed,
+      attrs: advanced.attrs,
+      historyForSkills: parsed.data.state.history,
       eventIds: pickedEvents.map((e) => e.id),
       eventTitles: pickedEvents.map((e) => e.title),
       skillKey: skillAlloc,

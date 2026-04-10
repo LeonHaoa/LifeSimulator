@@ -1,25 +1,38 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { motion } from "framer-motion";
+import { GameAmbientBg } from "@/components/GameAmbientBg";
 
+/**
+ * Plain <img> avoids next/image dev-bundler chunk edges that can trigger
+ * "__webpack_modules__[moduleId] is not a function" on hard refresh in some setups.
+ */
 export function WelcomeScreen() {
   return (
     <div className="welcome-root">
+      <GameAmbientBg variant="welcome" />
       <motion.div
         className="welcome-frame"
         initial={{ opacity: 0, scale: 0.96 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
       >
-        <Image
+        {/* eslint-disable-next-line @next/next/no-img-element -- avoid next/image dev chunk bugs on hard refresh */}
+        <img
           src="/welcome-hero.png"
           alt="Life Simulator 欢迎页"
-          fill
-          priority
-          sizes="(max-width: 1200px) 100vw, 1200px"
           className="object-cover"
+          width={1920}
+          height={1080}
+          decoding="async"
+          fetchPriority="high"
+          style={{
+            position: "absolute",
+            inset: 0,
+            width: "100%",
+            height: "100%",
+          }}
         />
         <div className="welcome-cta">
           <motion.div

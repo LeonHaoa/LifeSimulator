@@ -4,7 +4,11 @@ import {
   LLM_RETRY_DELAY_MS,
 } from "@/lib/constants";
 import type { AttrKey } from "@/lib/constants";
-import { skillLabel } from "./skill-flavor";
+import type { GameState } from "@/lib/schemas/game";
+import {
+  buildNarrativeUserJson,
+  NARRATIVE_SYSTEM_PLAIN,
+} from "./llm-prompt";
 
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
@@ -26,7 +30,11 @@ function parseSseLines(
 export async function* streamLlmNarrativePlain(input: {
   name: string;
   age: number;
+  runSeed: number;
+  attrs: GameState["attrs"];
+  historyForSkills: { skillAllocation?: AttrKey }[];
   eventIds: string[];
+  eventTitles: string[];
   skillKey?: AttrKey;
 }): AsyncGenerator<string> {
   const key = process.env.OPENAI_API_KEY?.trim();
@@ -36,49 +44,53 @@ export async function* streamLlmNarrativePlain(input: {
     process.env.OPENAI_BASE_URL?.replace(/\/$/, "") ||
     "https://api.openai.com/v1";
   const model = process.env.OPENAI_MODEL || "gpt-4o-mini";
+  const timeoutMs =
+    Number.parseInt(process.env.LLM_TIMEOUT_MS || "", 10) || LLM_TIMEOUT_MS;
 
-  const userPayload: Record<string, unknown> = {
-    name: input.name,
-    age: input.age,
-    eventIds: input.eventIds,
-  };
-  if (input.skillKey) {
-    userPayload.skillFocus = skillLabel(input.skillKey);
-  }
+  const userContent = buildNarrativeUserJson(input);
 
-  const body = {
+  const bodyBase = {
     model,
-    temperature: 0.45,
     stream: true,
     messages: [
       {
         role: "system",
-        content:
-          "你是中式吐槽叙事机。直接输出叙述正文，不要用 Markdown、不要编号、不要 JSON。3–8 句中文，幽默损；若有 skillFocus，结尾自然呼应那个维度。",
+        content: NARRATIVE_SYSTEM_PLAIN,
       },
       {
         role: "user",
-        content: JSON.stringify(userPayload),
+        content: userContent,
       },
     ],
   };
 
+  const preferTempOne =
+    model.toLowerCase().startsWith("kimi-") || /moonshot\.cn/i.test(base);
+  const tempsToTry = preferTempOne ? [1] : [0.45, 1];
+
   for (let attempt = 0; attempt <= LLM_MAX_RETRIES; attempt++) {
     const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), LLM_TIMEOUT_MS);
+    const t = setTimeout(() => ctrl.abort(), timeoutMs);
     try {
-      const res = await fetch(`${base}/chat/completions`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${key}`,
-        },
-        body: JSON.stringify(body),
-        signal: ctrl.signal,
-      });
+      let res: Response | null = null;
+      for (const temperature of tempsToTry) {
+        res = await fetch(`${base}/chat/completions`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${key}`,
+          },
+          body: JSON.stringify({ ...bodyBase, temperature }),
+          signal: ctrl.signal,
+        });
+        if (res.ok) break;
+        if (res.status !== 400) continue;
+        // Some providers (e.g. some Moonshot models) only allow temperature=1.
+        // We'll retry with temperature=1 before giving up.
+      }
       clearTimeout(t);
 
-      if (!res.ok || !res.body) {
+      if (!res || !res.ok || !res.body) {
         if (attempt < LLM_MAX_RETRIES) {
           await sleep(LLM_RETRY_DELAY_MS);
           continue;

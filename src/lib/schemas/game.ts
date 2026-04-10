@@ -66,5 +66,5 @@ export const YearApiResponseSchema = z.object({
 export type YearApiResponse = z.infer<typeof YearApiResponseSchema>;
 
 export const LlmNarrativeJsonSchema = z.object({
-  text: z.string().min(1).max(4000),
+  text: z.string().min(1).max(6000),
 });

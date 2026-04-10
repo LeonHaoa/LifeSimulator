@@ -69,7 +69,11 @@ export async function POST(req: Request) {
         for await (const piece of streamLlmNarrativePlain({
           name: advanced.name,
           age: advanced.age,
+          runSeed: advanced.runSeed,
+          attrs: advanced.attrs,
+          historyForSkills: parsed.data.state.history,
           eventIds,
+          eventTitles,
           skillKey: skillAlloc,
         })) {
           usedLlm = true;

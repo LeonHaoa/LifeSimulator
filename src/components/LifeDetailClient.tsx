@@ -14,6 +14,22 @@ import {
 } from "@/lib/constants";
 import type { AttrKey } from "@/lib/constants";
 import { createInitialState } from "@/lib/engine/initial-state";
+import { GameAmbientBg } from "@/components/GameAmbientBg";
+import {
+  ensureAudioContext,
+  readBgmEnabled,
+  readSfxEnabled,
+  sfxBgmPreview,
+  sfxError,
+  sfxSkillTick,
+  sfxUiClick,
+  sfxYearAdvance,
+  sfxYearComplete,
+  startAmbientBgm,
+  stopAmbientBgm,
+  writeBgmEnabled,
+  writeSfxEnabled,
+} from "@/lib/audio/game-audio";
 
 type Phase = "name" | "play";
 type Step = "allocate" | "transition" | "streaming" | "idle";
@@ -126,7 +142,11 @@ export function LifeDetailClient() {
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [milestone, setMilestone] = useState<string | null>(null);
-  const transitionTimerRef = useRef<number | null>(null);
+  const [sfxEnabled, setSfxEnabled] = useState(true);
+  const [bgmEnabled, setBgmEnabled] = useState(false);
+  const [journalOpen, setJournalOpen] = useState(false);
+  /** Narrative chunks while sun/moon runs; flushed after request settles. */
+  const heldStreamQueueRef = useRef("");
 
   // Slower client-side rendering: buffer deltas and type them out.
   const renderQueueRef = useRef<string>("");
@@ -157,18 +177,46 @@ export function LifeDetailClient() {
   }, []);
 
   useEffect(() => {
+    setSfxEnabled(readSfxEnabled());
+    setBgmEnabled(readBgmEnabled());
+  }, []);
+
+  useEffect(() => {
+    if (!bgmEnabled || phase !== "play") {
+      stopAmbientBgm();
+      return;
+    }
+    let cancelled = false;
+    void ensureAudioContext().then(() => {
+      if (!cancelled && bgmEnabled && phase === "play") void startAmbientBgm();
+    });
+    return () => {
+      cancelled = true;
+      stopAmbientBgm();
+    };
+  }, [bgmEnabled, phase]);
+
+  useEffect(() => {
     return () => {
       renderQueueRef.current = "";
+      heldStreamQueueRef.current = "";
       flushingRef.current = false;
-      if (transitionTimerRef.current != null) {
-        window.clearTimeout(transitionTimerRef.current);
-        transitionTimerRef.current = null;
-      }
+      stopAmbientBgm();
     };
   }, []);
 
+  useEffect(() => {
+    if (!journalOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setJournalOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [journalOpen]);
+
   const beginLife = () => {
     setErr(null);
+    playSfx(sfxUiClick);
     try {
       const s = createInitialState(nameInput);
       setState(s);
@@ -203,6 +251,24 @@ export function LifeDetailClient() {
     return remaining === 0;
   }, [state, busy, mode, remaining]);
 
+  const displayRound = useMemo(() => {
+    if (!state) return 1;
+    if (step === "idle" && state.history.length > 0) return state.history.length;
+    return state.history.length + 1;
+  }, [state, step]);
+
+  const roundBadgeKey = state
+    ? `${state.history.length}-${step}-${state.age}`
+    : "0";
+
+  const playSfx = useCallback(
+    (fn: () => Promise<void>) => {
+      if (!sfxEnabled) return;
+      void fn();
+    },
+    [sfxEnabled]
+  );
+
   const startYear = useCallback(async () => {
     if (!state) return;
     if (!canStartYear) return;
@@ -210,47 +276,51 @@ export function LifeDetailClient() {
     setBusy(true);
     setStreamText("");
     setMilestone(null);
-    setStep("transition");
+    heldStreamQueueRef.current = "";
+    renderQueueRef.current = "";
+    flushingRef.current = false;
 
     const prepared = applyAllocToState(state, alloc);
 
-    const TRANSITION_MS = 5_000;
-    if (transitionTimerRef.current != null) {
-      window.clearTimeout(transitionTimerRef.current);
-      transitionTimerRef.current = null;
-    }
+    // 1) Sun/moon immediately. 2) Request fires without waiting for animation.
+    setStep("transition");
+    playSfx(sfxYearAdvance);
 
-    transitionTimerRef.current = window.setTimeout(() => {
-      transitionTimerRef.current = null;
-      setStep("streaming");
-
-      renderQueueRef.current = "";
-      flushingRef.current = false;
-      streamStartAtRef.current = Date.now();
-
-      void (async () => {
-        try {
-          const result = await consumeYearStream(prepared, (t) => {
-            renderQueueRef.current += t;
-            flushRenderQueue();
-          });
-          setState(result.state);
-          if (result.yearSummary.milestoneMessage) {
-            setMilestone(result.yearSummary.milestoneMessage);
-          }
-          setStep("idle");
-          setAlloc({});
-        } catch (e) {
-          setErr(e instanceof Error ? e.message : "请求失败");
-          setStep("allocate");
-        } finally {
-          setBusy(false);
+    void (async () => {
+      try {
+        const result = await consumeYearStream(prepared, (t) => {
+          heldStreamQueueRef.current += t;
+        });
+        renderQueueRef.current += heldStreamQueueRef.current;
+        heldStreamQueueRef.current = "";
+        setState(result.state);
+        if (result.yearSummary.milestoneMessage) {
+          setMilestone(result.yearSummary.milestoneMessage);
         }
-      })();
-    }, TRANSITION_MS);
-  }, [state, alloc, canStartYear, flushRenderQueue]);
+        setAlloc({});
+        playSfx(sfxYearComplete);
+        // One painted frame of gradient streaming UI before settling to idle.
+        setStep("streaming");
+        streamStartAtRef.current = Date.now();
+        flushRenderQueue();
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            setStep("idle");
+          });
+        });
+      } catch (e) {
+        setErr(e instanceof Error ? e.message : "请求失败");
+        heldStreamQueueRef.current = "";
+        setStep("allocate");
+        playSfx(sfxError);
+      } finally {
+        setBusy(false);
+      }
+    })();
+  }, [state, alloc, canStartYear, flushRenderQueue, playSfx]);
 
   const prepareNextYear = () => {
+    playSfx(sfxUiClick);
     setStep("allocate");
     setStreamText("");
     setMilestone(null);
@@ -274,16 +344,154 @@ export function LifeDetailClient() {
     URL.revokeObjectURL(a.href);
   };
 
-  return (
-    <div className="life-page">
-      <header className="life-header">
-        <h1>人生成长</h1>
-        <Link href="/" className="life-back">
-          ← 返回欢迎页
-        </Link>
-      </header>
+  const toggleSfx = () => {
+    const next = !sfxEnabled;
+    setSfxEnabled(next);
+    writeSfxEnabled(next);
+    if (next) void sfxUiClick();
+  };
 
-      <AnimatePresence mode="wait">
+  const toggleBgm = () => {
+    const next = !bgmEnabled;
+    setBgmEnabled(next);
+    writeBgmEnabled(next);
+    void ensureAudioContext();
+    if (next && sfxEnabled) void sfxBgmPreview();
+  };
+
+  const JournalPanel = state ? (
+    <section className="life-panel life-panel--drawer">
+      <h2>年鉴</h2>
+      <ul className="history-list">
+        {state.history.length === 0 ? (
+          <li style={{ color: "var(--muted)" }}>暂无记录</li>
+        ) : (
+          [...state.history]
+            .reverse()
+            .map((h) => (
+              <li key={`${h.age}-${h.eventIds.join(",")}`}>
+                <strong>{h.age} 岁</strong>
+                {h.skillAllocation ? ` · +1 ${ATTR_LABELS[h.skillAllocation]}` : ""}
+                <br />
+                {h.narrative}
+                {h.fallback ? (
+                  <span style={{ color: "var(--muted)" }}> （本地叙事）</span>
+                ) : null}
+              </li>
+            ))
+        )}
+      </ul>
+      <button
+        type="button"
+        className="primary-btn"
+        style={{
+          marginTop: 12,
+          background: "var(--panel2)",
+          border: "1px solid var(--border)",
+        }}
+        onClick={exportJson}
+      >
+        导出存档 JSON
+      </button>
+    </section>
+  ) : null;
+
+  const primaryCta =
+    phase === "play" && state ? (
+      step === "allocate" ? (
+        <button
+          type="button"
+          className="life-commandbar__primary"
+          disabled={!canStartYear}
+          onClick={() => void startYear()}
+        >
+          {mode === "gain"
+            ? remaining === 0
+              ? "开启下一年"
+              : "先分配完点数"
+            : mode === "lose"
+              ? remaining === 0
+                ? "开启下一年"
+                : "先扣完点数"
+              : "开启下一年"}
+        </button>
+      ) : step === "idle" ? (
+        <button
+          type="button"
+          className="life-commandbar__primary"
+          onClick={prepareNextYear}
+        >
+          下一年
+        </button>
+      ) : (
+        <button type="button" className="life-commandbar__primary" disabled>
+          {step === "transition" ? "下一年开启中…" : "叙事生成中…"}
+        </button>
+      )
+    ) : (
+      <button type="button" className="life-commandbar__primary" disabled>
+        请先创建角色
+      </button>
+    );
+
+  return (
+    <>
+      <GameAmbientBg variant="life" />
+      <div className="life-shell">
+        <div className="life-page">
+          <header className="life-header">
+            <div className="life-header__brand">
+              <span className="life-hud-badge" aria-hidden="true">
+                ◆ 人生模拟 ◆
+              </span>
+              <div className="life-header__title-row">
+                <h1>人生成长</h1>
+                {phase === "play" && state && (
+                  <motion.span
+                    key={roundBadgeKey}
+                    className="life-round-badge"
+                    initial={{ scale: 0.65, opacity: 0, rotate: -10 }}
+                    animate={{ scale: 1, opacity: 1, rotate: 0 }}
+                    transition={{ type: "spring", stiffness: 460, damping: 24 }}
+                  >
+                    第 {displayRound} 回合
+                    {step === "idle" && state.history.length > 0 ? (
+                      <span className="life-round-badge__sub">已结算</span>
+                    ) : (
+                      <span className="life-round-badge__sub">进行中</span>
+                    )}
+                  </motion.span>
+                )}
+              </div>
+              <p className="life-header__tagline">技能 · 流年 · 叙事</p>
+            </div>
+            <div className="life-header__actions">
+              <div className="life-audio-bar" role="group" aria-label="音频">
+                <button
+                  type="button"
+                  className={`life-audio-btn${sfxEnabled ? " is-on" : ""}`}
+                  onClick={toggleSfx}
+                  aria-pressed={sfxEnabled}
+                >
+                  音效
+                </button>
+                <button
+                  type="button"
+                  className={`life-audio-btn${bgmEnabled ? " is-on" : ""}`}
+                  onClick={toggleBgm}
+                  aria-pressed={bgmEnabled}
+                >
+                  音乐
+                </button>
+              </div>
+              <Link href="/" className="life-back">
+                ← 返回欢迎页
+              </Link>
+            </div>
+          </header>
+
+          <main className="life-stage" aria-label="主舞台">
+            <AnimatePresence mode="wait">
         {phase === "name" && (
           <motion.div
             key="name"
@@ -333,6 +541,7 @@ export function LifeDetailClient() {
                     <motion.div
                       key={k}
                       className="stat-card"
+                      data-stat={k}
                       layout
                       initial={{ opacity: 0, scale: 0.96 }}
                       animate={{ opacity: 1, scale: 1 }}
@@ -376,12 +585,14 @@ export function LifeDetailClient() {
                         const onPlus = () => {
                           if (busy) return;
                           if (!canPlus) return;
+                          playSfx(() => sfxSkillTick(1));
                           setAlloc((prev) => ({ ...prev, [k]: (prev[k] ?? 0) + 1 }));
                         };
 
                         const onMinus = () => {
                           if (busy) return;
                           if (!canMinus) return;
+                          playSfx(() => sfxSkillTick(-1));
                           setAlloc((prev) => {
                             const cur = prev[k] ?? 0;
                             const next = cur - 1;
@@ -433,18 +644,10 @@ export function LifeDetailClient() {
                     <button
                       type="button"
                       className="primary-btn"
-                      disabled={!canStartYear}
-                      onClick={() => void startYear()}
+                      disabled
+                      aria-disabled="true"
                     >
-                      {mode === "gain"
-                        ? remaining === 0
-                          ? "开启下一年"
-                          : "先分配完点数"
-                        : mode === "lose"
-                          ? remaining === 0
-                            ? "开启下一年"
-                            : "先扣完点数"
-                          : "开启下一年"}
+                      操作已移到底部指令条
                     </button>
                   </motion.div>
                 )}
@@ -501,14 +704,6 @@ export function LifeDetailClient() {
                   >
                     <h2 style={{ marginTop: "1.25rem" }}>这一年……</h2>
                     <div className="stream-box">{streamText}</div>
-                    <button
-                      type="button"
-                      className="primary-btn"
-                      onClick={prepareNextYear}
-                      style={{ marginTop: 12 }}
-                    >
-                      下一年
-                    </button>
                   </motion.div>
                 )}
 
@@ -523,59 +718,73 @@ export function LifeDetailClient() {
                 )}
               </motion.section>
             </div>
-
-            <aside>
-              <motion.section
-                className="life-panel"
-                initial={{ opacity: 0, x: 16 }}
-                animate={{ opacity: 1, x: 0 }}
-              >
-                <h2>年鉴</h2>
-                <ul className="history-list">
-                  {state.history.length === 0 ? (
-                    <li style={{ color: "var(--muted)" }}>暂无记录</li>
-                  ) : (
-                    [...state.history]
-                      .reverse()
-                      .map((h) => (
-                        <li key={`${h.age}-${h.eventIds.join(",")}`}>
-                          <strong>{h.age} 岁</strong>
-                          {h.skillAllocation
-                            ? ` · +1 ${ATTR_LABELS[h.skillAllocation]}`
-                            : ""}
-                          <br />
-                          {h.narrative}
-                          {h.fallback ? (
-                            <span style={{ color: "var(--muted)" }}>
-                              {" "}
-                              （本地叙事）
-                            </span>
-                          ) : null}
-                        </li>
-                      ))
-                  )}
-                </ul>
-                <button
-                  type="button"
-                  className="primary-btn"
-                  style={{
-                    marginTop: 12,
-                    background: "var(--panel2)",
-                    border: "1px solid var(--border)",
-                  }}
-                  onClick={exportJson}
-                >
-                  导出存档 JSON
-                </button>
-              </motion.section>
-            </aside>
           </motion.div>
         )}
-      </AnimatePresence>
+            </AnimatePresence>
+          </main>
 
-      {err && (
-        <p style={{ color: "var(--danger)", marginTop: "1rem" }}>{err}</p>
+          {err && (
+            <p style={{ color: "var(--danger)", marginTop: "1rem" }}>{err}</p>
+          )}
+        </div>
+      </div>
+
+      <div className="life-commandbar" role="group" aria-label="指令条">
+        <div className="life-commandbar__inner">
+          <div className="life-commandbar__left">
+            <div className="life-commandbar__hint">
+              {phase === "play" && state
+                ? mode === "gain"
+                  ? `剩余 ${remaining} 点`
+                  : mode === "lose"
+                    ? `待扣 ${remaining} 点`
+                    : "本年无需分配"
+                : "准备开始"}
+            </div>
+          </div>
+          <div className="life-commandbar__center">{primaryCta}</div>
+          <div className="life-commandbar__right">
+            <button
+              type="button"
+              className="life-commandbar__btn"
+              onClick={() => setJournalOpen(true)}
+              disabled={phase !== "play" || !state}
+            >
+              年鉴
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {journalOpen && (
+        <div
+          className="life-drawer"
+          role="dialog"
+          aria-modal="true"
+          aria-label="年鉴"
+        >
+          <button
+            type="button"
+            className="life-drawer__overlay"
+            aria-label="关闭年鉴"
+            onClick={() => setJournalOpen(false)}
+          />
+          <div className="life-drawer__panel">
+            <div className="life-drawer__header">
+              <div className="life-drawer__title">年鉴</div>
+              <button
+                type="button"
+                className="life-drawer__close"
+                onClick={() => setJournalOpen(false)}
+                aria-label="关闭"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="life-drawer__body">{JournalPanel}</div>
+          </div>
+        </div>
       )}
-    </div>
+    </>
   );
 }
