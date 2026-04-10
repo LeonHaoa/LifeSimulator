@@ -1,5 +1,6 @@
 "use client";
 
+import React from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { GameAmbientBg } from "@/components/GameAmbientBg";
@@ -22,6 +23,9 @@ export function WelcomeScreen() {
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
       >
+        <div className="welcome-topbar">
+          <LocaleSwitcher />
+        </div>
         {/* eslint-disable-next-line @next/next/no-img-element -- avoid next/image dev chunk bugs on hard refresh */}
         <img
           src="/welcome-hero.png"
@@ -39,7 +43,6 @@ export function WelcomeScreen() {
           }}
         />
         <div className="welcome-cta">
-          <LocaleSwitcher />
           <motion.div
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
