@@ -18,6 +18,15 @@ export const ATTR_KEYS = [
 
 export type AttrKey = (typeof ATTR_KEYS)[number];
 
+export const EVENT_TITLE_KEYS = {
+  "fallback-breath": "fallbackBreath",
+  brick: "brick",
+  debut: "debut",
+  gaokao: "gaokao",
+  "tag-bonus-after-work": "tagBonusAfterWork",
+  "easter-name-long": "easterNameLong",
+} as const;
+
 export const ATTR_LABELS: Record<AttrKey, string> = {
   happiness: "快乐",
   health: "健康",

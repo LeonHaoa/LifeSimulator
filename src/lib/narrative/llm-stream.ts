@@ -4,10 +4,11 @@ import {
   LLM_RETRY_DELAY_MS,
 } from "@/lib/constants";
 import type { AttrKey } from "@/lib/constants";
+import type { Locale } from "@/lib/i18n/types";
 import type { GameState } from "@/lib/schemas/game";
 import {
+  buildNarrativeSystemPrompt,
   buildNarrativeUserJson,
-  NARRATIVE_SYSTEM_PLAIN,
 } from "./llm-prompt";
 
 function sleep(ms: number) {
@@ -24,10 +25,8 @@ function parseSseLines(
   return { lines: parts, rest };
 }
 
-/**
- * Stream plain-text narrative tokens from OpenAI chat completions (stream: true).
- */
 export async function* streamLlmNarrativePlain(input: {
+  locale: Locale;
   name: string;
   age: number;
   runSeed: number;
@@ -55,7 +54,7 @@ export async function* streamLlmNarrativePlain(input: {
     messages: [
       {
         role: "system",
-        content: NARRATIVE_SYSTEM_PLAIN,
+        content: buildNarrativeSystemPrompt(input.locale, "plain"),
       },
       {
         role: "user",
@@ -70,7 +69,7 @@ export async function* streamLlmNarrativePlain(input: {
 
   for (let attempt = 0; attempt <= LLM_MAX_RETRIES; attempt++) {
     const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), timeoutMs);
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
     try {
       let res: Response | null = null;
       for (const temperature of tempsToTry) {
@@ -85,10 +84,8 @@ export async function* streamLlmNarrativePlain(input: {
         });
         if (res.ok) break;
         if (res.status !== 400) continue;
-        // Some providers (e.g. some Moonshot models) only allow temperature=1.
-        // We'll retry with temperature=1 before giving up.
       }
-      clearTimeout(t);
+      clearTimeout(timer);
 
       if (!res || !res.ok || !res.body) {
         if (attempt < LLM_MAX_RETRIES) {
@@ -105,7 +102,10 @@ export async function* streamLlmNarrativePlain(input: {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        const { lines, rest } = parseSseLines(decoder.decode(value, { stream: true }), carry);
+        const { lines, rest } = parseSseLines(
+          decoder.decode(value, { stream: true }),
+          carry
+        );
         carry = rest;
         for (const line of lines) {
           const trimmed = line.trim();
@@ -125,7 +125,7 @@ export async function* streamLlmNarrativePlain(input: {
       }
       return;
     } catch {
-      clearTimeout(t);
+      clearTimeout(timer);
       if (attempt < LLM_MAX_RETRIES) {
         await sleep(LLM_RETRY_DELAY_MS);
         continue;

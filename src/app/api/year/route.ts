@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { SCHEMA_VERSION } from "@/lib/constants";
+import { getDictionary } from "@/lib/i18n/dictionary";
 import {
   YearApiRequestSchema,
   YearApiResponseSchema,
@@ -33,6 +34,8 @@ export async function POST(req: Request) {
   }
 
   try {
+    const locale = parsed.data.locale;
+    const copy = getDictionary(locale);
     const skillAlloc = parsed.data.state.lastSkillAllocation;
     const events = loadEvents();
     const { nextState: advanced, pickedEvents, engineFallback } = advanceYear(
@@ -41,13 +44,14 @@ export async function POST(req: Request) {
     );
 
     const narrative = await buildNarrative({
+      locale,
       name: advanced.name,
       age: advanced.age,
       runSeed: advanced.runSeed,
       attrs: advanced.attrs,
       historyForSkills: parsed.data.state.history,
       eventIds: pickedEvents.map((e) => e.id),
-      eventTitles: pickedEvents.map((e) => e.title),
+      eventTitles: pickedEvents.map((e) => copy.events[e.titleKey].title),
       skillKey: skillAlloc,
     });
 

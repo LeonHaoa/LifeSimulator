@@ -11,7 +11,8 @@ describe("buildNarrative", () => {
   it("uses template when no API key", async () => {
     process.env.OPENAI_API_KEY = "";
     const r = await buildNarrative({
-      name: "张三",
+      locale: "en",
+      name: "Alex",
       age: 3,
       runSeed: 1,
       attrs: {
@@ -26,11 +27,11 @@ describe("buildNarrative", () => {
       },
       historyForSkills: [],
       eventIds: ["x"],
-      eventTitles: ["测试事件"],
+      eventTitles: ["Test event"],
       skillKey: "happiness",
     });
     expect(r.fallback).toBe(true);
-    expect(r.text).toContain("张三");
-    expect(r.text).toContain("快乐");
+    expect(r.text).toContain("Alex");
+    expect(r.text.toLowerCase()).toContain("happiness");
   });
 });

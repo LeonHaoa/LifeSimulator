@@ -4,10 +4,11 @@ import {
   LLM_RETRY_DELAY_MS,
 } from "@/lib/constants";
 import type { AttrKey } from "@/lib/constants";
+import type { Locale } from "@/lib/i18n/types";
 import { LlmNarrativeJsonSchema, type GameState } from "@/lib/schemas/game";
 import {
+  buildNarrativeSystemPrompt,
   buildNarrativeUserJson,
-  NARRATIVE_SYSTEM_JSON,
 } from "./llm-prompt";
 
 function sleep(ms: number) {
@@ -15,11 +16,13 @@ function sleep(ms: number) {
 }
 
 function tryParseJsonObjectish(raw: string): unknown | null {
-  const t = raw.trim();
-  if (!t) return null;
+  const text = raw.trim();
+  if (!text) return null;
 
-  // Handle fenced code blocks like ```json { ... } ```
-  const unfenced = t.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+  const unfenced = text
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
 
   const first = unfenced.indexOf("{");
   const last = unfenced.lastIndexOf("}");
@@ -34,6 +37,7 @@ function tryParseJsonObjectish(raw: string): unknown | null {
 }
 
 export async function fetchLlmNarrative(input: {
+  locale: Locale;
   name: string;
   age: number;
   runSeed: number;
@@ -45,17 +49,16 @@ export async function fetchLlmNarrative(input: {
 }): Promise<string | null> {
   const key = process.env.OPENAI_API_KEY?.trim();
   const debug = process.env.LLM_DEBUG === "1";
+
   if (debug) {
     console.warn(
       `[llm] debug enabled: keyPresent=${Boolean(key)} base=${
         process.env.OPENAI_BASE_URL?.replace(/\/$/, "") || "https://api.openai.com/v1"
-      } model=${process.env.OPENAI_MODEL || "gpt-4o-mini"}`
+      } model=${process.env.OPENAI_MODEL || "gpt-4o-mini"} locale=${input.locale}`
     );
   }
   if (!key) {
-    if (debug) {
-      console.warn("[llm] OPENAI_API_KEY missing; using template fallback");
-    }
+    if (debug) console.warn("[llm] OPENAI_API_KEY missing; using template fallback");
     return null;
   }
 
@@ -68,7 +71,7 @@ export async function fetchLlmNarrative(input: {
 
   const userContent = buildNarrativeUserJson(input);
   const messages = [
-    { role: "system", content: NARRATIVE_SYSTEM_JSON },
+    { role: "system", content: buildNarrativeSystemPrompt(input.locale, "json") },
     { role: "user", content: userContent },
   ];
 
@@ -78,8 +81,6 @@ export async function fetchLlmNarrative(input: {
       temperature: opts.temperature,
       messages,
     };
-    // Some OpenAI-compatible providers (including some Moonshot deployments)
-    // may reject `response_format`. We'll optimistically send it first, then retry without.
     if (opts.withResponseFormat) {
       body.response_format = { type: "json_object" };
     }
@@ -104,7 +105,7 @@ export async function fetchLlmNarrative(input: {
 
   for (let attempt = 0; attempt <= LLM_MAX_RETRIES; attempt++) {
     const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), timeoutMs);
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
     try {
       const callOnce = async (body: unknown) =>
         fetch(`${base}/chat/completions`, {
@@ -118,12 +119,8 @@ export async function fetchLlmNarrative(input: {
         });
 
       const bodiesToTry: Array<{ withResponseFormat: boolean; temperature: number }> = [];
-      for (const temperature of tempsToTry) {
-        bodiesToTry.push({ withResponseFormat: true, temperature });
-      }
-      for (const temperature of tempsToTry) {
-        bodiesToTry.push({ withResponseFormat: false, temperature });
-      }
+      for (const temperature of tempsToTry) bodiesToTry.push({ withResponseFormat: true, temperature });
+      for (const temperature of tempsToTry) bodiesToTry.push({ withResponseFormat: false, temperature });
 
       let res: Response | null = null;
       let lastErrText = "";
@@ -132,20 +129,18 @@ export async function fetchLlmNarrative(input: {
         if (res.ok) break;
         if (res.status !== 400) continue;
         lastErrText = await readErrorText(res);
-        // If provider complains about temperature, allow trying temperature=1.
-        // Otherwise, keep iterating through the planned compatibility matrix.
         if (debug && lastErrText) {
           console.warn(
             `[llm] 400 from provider (will retry compat variants): ${lastErrText.slice(0, 240)}`
           );
         }
         if (!isInvalidTemperature(lastErrText) && opts.withResponseFormat === false) {
-          // If already without response_format and it's not temperature-related,
-          // remaining variants are unlikely to help in this attempt loop.
           break;
         }
       }
-      clearTimeout(t);
+
+      clearTimeout(timer);
+
       if (!res || !res.ok) {
         if (debug) {
           const errText = res ? await readErrorText(res) : lastErrText;
@@ -161,6 +156,7 @@ export async function fetchLlmNarrative(input: {
         }
         return null;
       }
+
       const data = (await res.json()) as {
         choices?: { message?: { content?: string } }[];
       };
@@ -172,6 +168,7 @@ export async function fetchLlmNarrative(input: {
         }
         return null;
       }
+
       const parsed = tryParseJsonObjectish(raw);
       if (!parsed) {
         if (debug) {
@@ -184,11 +181,13 @@ export async function fetchLlmNarrative(input: {
         return null;
       }
 
-      const z = LlmNarrativeJsonSchema.safeParse(parsed);
-      if (!z.success) {
+      const zodResult = LlmNarrativeJsonSchema.safeParse(parsed);
+      if (!zodResult.success) {
         if (debug) {
           console.warn(
-            `[llm] JSON parsed but schema invalid: ${JSON.stringify(z.error.flatten()).slice(0, 400)}`
+            `[llm] JSON parsed but schema invalid: ${JSON.stringify(
+              zodResult.error.flatten()
+            ).slice(0, 400)}`
           );
         }
         if (attempt < LLM_MAX_RETRIES) {
@@ -197,13 +196,14 @@ export async function fetchLlmNarrative(input: {
         }
         return null;
       }
-      return z.data.text;
-    } catch (e) {
-      clearTimeout(t);
+
+      return zodResult.data.text;
+    } catch (error) {
+      clearTimeout(timer);
       if (debug) {
         console.warn(
           `[llm] request failed (attempt ${attempt + 1}/${LLM_MAX_RETRIES + 1}): ${
-            e instanceof Error ? e.message : String(e)
+            error instanceof Error ? error.message : String(error)
           }`
         );
       }
@@ -214,5 +214,6 @@ export async function fetchLlmNarrative(input: {
       return null;
     }
   }
+
   return null;
 }

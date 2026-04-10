@@ -1,4 +1,5 @@
 import { SCHEMA_VERSION } from "@/lib/constants";
+import { getDictionary } from "@/lib/i18n/dictionary";
 import {
   YearApiRequestSchema,
   YearApiResponseSchema,
@@ -44,6 +45,7 @@ export async function POST(req: Request) {
   }
 
   const encoder = new TextEncoder();
+  const locale = parsed.data.locale;
   const skillAlloc = parsed.data.state.lastSkillAllocation;
 
   const stream = new ReadableStream({
@@ -55,18 +57,20 @@ export async function POST(req: Request) {
       };
 
       try {
+        const copy = getDictionary(locale);
         const events = loadEvents();
         const { nextState: advanced, pickedEvents, engineFallback } =
           advanceYear(parsed.data.state, events);
 
         const eventIds = pickedEvents.map((e) => e.id);
-        const eventTitles = pickedEvents.map((e) => e.title);
+        const eventTitles = pickedEvents.map((e) => copy.events[e.titleKey].title);
 
         let fullText = "";
         let usedLlm = false;
         let fromTemplate = false;
 
         for await (const piece of streamLlmNarrativePlain({
+          locale,
           name: advanced.name,
           age: advanced.age,
           runSeed: advanced.runSeed,
@@ -84,6 +88,7 @@ export async function POST(req: Request) {
         if (!fullText.trim()) {
           fromTemplate = true;
           const templateText = templateNarrative(
+            locale,
             advanced.name,
             advanced.age,
             eventTitles,

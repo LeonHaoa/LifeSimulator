@@ -1,20 +1,21 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import React from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { motion, AnimatePresence } from "framer-motion";
-import type { GameState } from "@/lib/schemas/game";
-import type { YearApiResponse } from "@/lib/schemas/game";
-import {
-  ATTR_KEYS,
-  ATTR_LABELS,
-  ATTR_MAX,
-  SCHEMA_VERSION,
-  yearlySkillPoints,
-} from "@/lib/constants";
+import { AnimatePresence, motion } from "framer-motion";
+import type { GameState, YearApiResponse } from "@/lib/schemas/game";
+import { ATTR_KEYS, ATTR_MAX, SCHEMA_VERSION, yearlySkillPoints } from "@/lib/constants";
 import type { AttrKey } from "@/lib/constants";
-import { createInitialState } from "@/lib/engine/initial-state";
+import {
+  createInitialState,
+  validateNewName,
+} from "@/lib/engine/initial-state";
 import { GameAmbientBg } from "@/components/GameAmbientBg";
+import { LocaleSwitcher } from "@/components/LocaleSwitcher";
+import { t } from "@/lib/i18n/dictionary";
+import { useLocale } from "@/lib/i18n/client-locale";
+import type { Locale } from "@/lib/i18n/types";
 import {
   ensureAudioContext,
   readBgmEnabled,
@@ -33,7 +34,6 @@ import {
 
 type Phase = "name" | "play";
 type Step = "allocate" | "transition" | "streaming" | "idle";
-
 type AllocationMap = Partial<Record<AttrKey, number>>;
 
 function clampAttr(n: number): number {
@@ -41,27 +41,29 @@ function clampAttr(n: number): number {
 }
 
 function sumAlloc(alloc: AllocationMap): number {
-  return Object.values(alloc).reduce((s, v) => s + (v ?? 0), 0);
+  return Object.values(alloc).reduce((sum, value) => sum + (value ?? 0), 0);
 }
 
 function primaryKeyFromAlloc(alloc: AllocationMap): AttrKey | undefined {
-  let best: { k: AttrKey; v: number } | null = null;
-  for (const k of ATTR_KEYS) {
-    const v = alloc[k] ?? 0;
-    if (v === 0) continue;
-    const score = Math.abs(v);
-    if (!best || score > Math.abs(best.v)) best = { k, v };
+  let best: { key: AttrKey; delta: number } | null = null;
+  for (const key of ATTR_KEYS) {
+    const delta = alloc[key] ?? 0;
+    if (delta === 0) continue;
+    if (!best || Math.abs(delta) > Math.abs(best.delta)) {
+      best = { key, delta };
+    }
   }
-  return best?.k;
+  return best?.key;
 }
 
 function applyAllocToState(state: GameState, alloc: AllocationMap): GameState {
   let attrs = { ...state.attrs };
-  for (const k of ATTR_KEYS) {
-    const delta = alloc[k] ?? 0;
+  for (const key of ATTR_KEYS) {
+    const delta = alloc[key] ?? 0;
     if (!delta) continue;
-    attrs = { ...attrs, [k]: clampAttr(attrs[k] + delta) };
+    attrs = { ...attrs, [key]: clampAttr(attrs[key] + delta) };
   }
+
   return {
     ...state,
     attrs,
@@ -70,8 +72,14 @@ function applyAllocToState(state: GameState, alloc: AllocationMap): GameState {
 }
 
 async function consumeYearStream(
+  locale: Locale,
   state: GameState,
-  onDelta: (t: string) => void
+  onDelta: (text: string) => void,
+  errors: {
+    streamReadFailed: string;
+    streamFailed: string;
+    missingFinalState: string;
+  }
 ): Promise<YearApiResponse> {
   const res = await fetch("/api/year/stream", {
     method: "POST",
@@ -79,6 +87,7 @@ async function consumeYearStream(
     body: JSON.stringify({
       schemaVersion: SCHEMA_VERSION,
       stream: true,
+      locale,
       state,
     }),
   });
@@ -93,22 +102,23 @@ async function consumeYearStream(
   }
 
   const reader = res.body?.getReader();
-  if (!reader) throw new Error("无法读取流式响应");
+  if (!reader) throw new Error(errors.streamReadFailed);
 
-  const dec = new TextDecoder();
-  let buf = "";
+  const decoder = new TextDecoder();
+  let buffer = "";
   let finalPayload: YearApiResponse | null = null;
 
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
-    buf += dec.decode(value, { stream: true });
+    buffer += decoder.decode(value, { stream: true });
 
     let sep: number;
-    while ((sep = buf.indexOf("\n\n")) !== -1) {
-      const block = buf.slice(0, sep).trim();
-      buf = buf.slice(sep + 2);
+    while ((sep = buffer.indexOf("\n\n")) !== -1) {
+      const block = buffer.slice(0, sep).trim();
+      buffer = buffer.slice(sep + 2);
       if (!block.startsWith("data:")) continue;
+
       const raw = block.slice(5).trim();
       let msg: {
         type: string;
@@ -116,23 +126,25 @@ async function consumeYearStream(
         payload?: YearApiResponse;
         message?: string;
       };
+
       try {
         msg = JSON.parse(raw) as typeof msg;
       } catch {
         continue;
       }
+
       if (msg.type === "delta" && msg.text) onDelta(msg.text);
       if (msg.type === "final" && msg.payload) finalPayload = msg.payload;
-      if (msg.type === "error")
-        throw new Error(msg.message || "流式叙事失败");
+      if (msg.type === "error") throw new Error(msg.message || errors.streamFailed);
     }
   }
 
-  if (!finalPayload) throw new Error("未收到完整游戏状态");
+  if (!finalPayload) throw new Error(errors.missingFinalState);
   return finalPayload;
 }
 
 export function LifeDetailClient() {
+  const { locale, messages } = useLocale();
   const [phase, setPhase] = useState<Phase>("name");
   const [step, setStep] = useState<Step>("allocate");
   const [nameInput, setNameInput] = useState("");
@@ -145,34 +157,45 @@ export function LifeDetailClient() {
   const [sfxEnabled, setSfxEnabled] = useState(true);
   const [bgmEnabled, setBgmEnabled] = useState(false);
   const [journalOpen, setJournalOpen] = useState(false);
-  /** Narrative chunks while sun/moon runs; flushed after request settles. */
   const heldStreamQueueRef = useRef("");
-
-  // Slower client-side rendering: buffer deltas and type them out.
-  const renderQueueRef = useRef<string>("");
+  const renderQueueRef = useRef("");
   const flushingRef = useRef(false);
   const streamTargetMsRef = useRef(20_000);
   const streamStartAtRef = useRef<number>(0);
 
+  const statLabel = useCallback(
+    (key: AttrKey) => messages.stats[key].label,
+    [messages.stats]
+  );
+
+  const playSfx = useCallback(
+    (fn: () => Promise<void>) => {
+      if (!sfxEnabled) return;
+      void fn();
+    },
+    [sfxEnabled]
+  );
+
   const flushRenderQueue = useCallback(() => {
     if (flushingRef.current) return;
     flushingRef.current = true;
+
     const tick = () => {
-      const q = renderQueueRef.current;
-      if (!q) {
+      const queue = renderQueueRef.current;
+      if (!queue) {
         flushingRef.current = false;
         return;
       }
       const elapsed = Date.now() - (streamStartAtRef.current || Date.now());
       const remainingMs = Math.max(0, streamTargetMsRef.current - elapsed);
-      // Aim to finish around target duration, but keep it readable.
-      const perCharMs = Math.max(12, Math.min(90, remainingMs / q.length));
+      const perCharMs = Math.max(12, Math.min(90, remainingMs / queue.length));
       const take = Math.max(1, Math.min(3, Math.floor(36 / perCharMs)));
-      const piece = q.slice(0, take);
-      renderQueueRef.current = q.slice(take);
+      const piece = queue.slice(0, take);
+      renderQueueRef.current = queue.slice(take);
       setStreamText((prev) => prev + piece);
       window.setTimeout(tick, perCharMs);
     };
+
     tick();
   }, []);
 
@@ -207,8 +230,8 @@ export function LifeDetailClient() {
 
   useEffect(() => {
     if (!journalOpen) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setJournalOpen(false);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setJournalOpen(false);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -218,15 +241,17 @@ export function LifeDetailClient() {
     setErr(null);
     playSfx(sfxUiClick);
     try {
-      const s = createInitialState(nameInput);
-      setState(s);
+      validateNewName(nameInput);
+      const nextState = createInitialState(nameInput);
+      setState(nextState);
       setPhase("play");
       setStep("allocate");
       setAlloc({});
       setStreamText("");
       setMilestone(null);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "创建角色失败");
+    } catch {
+      setErr(messages.errors.invalidName);
+      playSfx(sfxError);
     }
   };
 
@@ -235,7 +260,6 @@ export function LifeDetailClient() {
   const spent = useMemo(() => sumAlloc(alloc), [alloc]);
   const remaining = useMemo(() => {
     if (skillBudget >= 0) return Math.max(0, skillBudget - spent);
-    // budget is negative: user must allocate -2 total (e.g. -2).
     return Math.max(0, Math.abs(skillBudget) - Math.abs(spent));
   }, [skillBudget, spent]);
 
@@ -261,17 +285,9 @@ export function LifeDetailClient() {
     ? `${state.history.length}-${step}-${state.age}`
     : "0";
 
-  const playSfx = useCallback(
-    (fn: () => Promise<void>) => {
-      if (!sfxEnabled) return;
-      void fn();
-    },
-    [sfxEnabled]
-  );
-
   const startYear = useCallback(async () => {
-    if (!state) return;
-    if (!canStartYear) return;
+    if (!state || !canStartYear) return;
+
     setErr(null);
     setBusy(true);
     setStreamText("");
@@ -281,16 +297,19 @@ export function LifeDetailClient() {
     flushingRef.current = false;
 
     const prepared = applyAllocToState(state, alloc);
-
-    // 1) Sun/moon immediately. 2) Request fires without waiting for animation.
     setStep("transition");
     playSfx(sfxYearAdvance);
 
     void (async () => {
       try {
-        const result = await consumeYearStream(prepared, (t) => {
-          heldStreamQueueRef.current += t;
-        });
+        const result = await consumeYearStream(
+          locale,
+          prepared,
+          (piece) => {
+            heldStreamQueueRef.current += piece;
+          },
+          messages.errors
+        );
         renderQueueRef.current += heldStreamQueueRef.current;
         heldStreamQueueRef.current = "";
         setState(result.state);
@@ -299,7 +318,6 @@ export function LifeDetailClient() {
         }
         setAlloc({});
         playSfx(sfxYearComplete);
-        // One painted frame of gradient streaming UI before settling to idle.
         setStep("streaming");
         streamStartAtRef.current = Date.now();
         flushRenderQueue();
@@ -308,8 +326,10 @@ export function LifeDetailClient() {
             setStep("idle");
           });
         });
-      } catch (e) {
-        setErr(e instanceof Error ? e.message : "请求失败");
+      } catch (error) {
+        setErr(
+          error instanceof Error ? error.message : messages.errors.requestFailed
+        );
         heldStreamQueueRef.current = "";
         setStep("allocate");
         playSfx(sfxError);
@@ -317,7 +337,7 @@ export function LifeDetailClient() {
         setBusy(false);
       }
     })();
-  }, [state, alloc, canStartYear, flushRenderQueue, playSfx]);
+  }, [alloc, canStartYear, flushRenderQueue, locale, messages.errors, playSfx, state]);
 
   const prepareNextYear = () => {
     playSfx(sfxUiClick);
@@ -359,26 +379,46 @@ export function LifeDetailClient() {
     if (next && sfxEnabled) void sfxBgmPreview();
   };
 
+  const journalTitle = messages.life.almanac.title;
+  const drawerCloseLabel = locale === "zh-CN" ? "关闭" : "Close";
+  const audioGroupLabel = locale === "zh-CN" ? "音频" : "Audio";
+  const commandBarLabel = locale === "zh-CN" ? "指令条" : "Command bar";
+  const stageLabel = locale === "zh-CN" ? "主舞台" : "Main stage";
+  const readyLabel = locale === "zh-CN" ? "准备开始" : "Ready to begin";
+  const noAllocationLabel =
+    locale === "zh-CN" ? "本年无需分配" : "No allocation needed this year";
+  const removeHintLabel =
+    locale === "zh-CN" ? `待扣 ${remaining} 点` : `${remaining} point(s) to remove`;
+  const remainingHintLabel =
+    locale === "zh-CN" ? `剩余 ${remaining} 点` : `${remaining} point(s) left`;
+  const createFirstLabel =
+    locale === "zh-CN" ? "请先创建角色" : "Create a character first";
+
   const JournalPanel = state ? (
     <section className="life-panel life-panel--drawer">
-      <h2>年鉴</h2>
+      <h2>{messages.life.almanac.title}</h2>
       <ul className="history-list">
         {state.history.length === 0 ? (
-          <li style={{ color: "var(--muted)" }}>暂无记录</li>
+          <li style={{ color: "var(--muted)" }}>{messages.life.almanac.empty}</li>
         ) : (
-          [...state.history]
-            .reverse()
-            .map((h) => (
-              <li key={`${h.age}-${h.eventIds.join(",")}`}>
-                <strong>{h.age} 岁</strong>
-                {h.skillAllocation ? ` · +1 ${ATTR_LABELS[h.skillAllocation]}` : ""}
-                <br />
-                {h.narrative}
-                {h.fallback ? (
-                  <span style={{ color: "var(--muted)" }}> （本地叙事）</span>
-                ) : null}
-              </li>
-            ))
+          [...state.history].reverse().map((entry) => (
+            <li key={`${entry.age}-${entry.eventIds.join(",")}`}>
+              <strong>
+                {locale === "zh-CN" ? `${entry.age} 岁` : `Age ${entry.age}`}
+              </strong>
+              {entry.skillAllocation
+                ? ` · +1 ${statLabel(entry.skillAllocation)}`
+                : ""}
+              <br />
+              {entry.narrative}
+              {entry.fallback ? (
+                <span style={{ color: "var(--muted)" }}>
+                  {" "}
+                  ({messages.life.almanac.localNarrative})
+                </span>
+              ) : null}
+            </li>
+          ))
         )}
       </ul>
       <button
@@ -391,7 +431,7 @@ export function LifeDetailClient() {
         }}
         onClick={exportJson}
       >
-        导出存档 JSON
+        {messages.life.almanac.export}
       </button>
     </section>
   ) : null;
@@ -407,13 +447,13 @@ export function LifeDetailClient() {
         >
           {mode === "gain"
             ? remaining === 0
-              ? "开启下一年"
-              : "先分配完点数"
+              ? messages.life.nextYear.start
+              : messages.life.nextYear.mustSpend
             : mode === "lose"
               ? remaining === 0
-                ? "开启下一年"
-                : "先扣完点数"
-              : "开启下一年"}
+                ? messages.life.nextYear.start
+                : messages.life.nextYear.mustRemove
+              : messages.life.nextYear.start}
         </button>
       ) : step === "idle" ? (
         <button
@@ -421,16 +461,18 @@ export function LifeDetailClient() {
           className="life-commandbar__primary"
           onClick={prepareNextYear}
         >
-          下一年
+          {messages.life.nextYear.next}
         </button>
       ) : (
         <button type="button" className="life-commandbar__primary" disabled>
-          {step === "transition" ? "下一年开启中…" : "叙事生成中…"}
+          {step === "transition"
+            ? messages.life.nextYear.opening
+            : messages.life.nextYear.generating}
         </button>
       )
     ) : (
       <button type="button" className="life-commandbar__primary" disabled>
-        请先创建角色
+        {createFirstLabel}
       </button>
     );
 
@@ -442,10 +484,10 @@ export function LifeDetailClient() {
           <header className="life-header">
             <div className="life-header__brand">
               <span className="life-hud-badge" aria-hidden="true">
-                ◆ 人生模拟 ◆
+                ◆ {messages.life.title} ◆
               </span>
               <div className="life-header__title-row">
-                <h1>人生成长</h1>
+                <h1>{messages.life.title}</h1>
                 {phase === "play" && state && (
                   <motion.span
                     key={roundBadgeKey}
@@ -454,26 +496,31 @@ export function LifeDetailClient() {
                     animate={{ scale: 1, opacity: 1, rotate: 0 }}
                     transition={{ type: "spring", stiffness: 460, damping: 24 }}
                   >
-                    第 {displayRound} 回合
+                    {messages.life.round({ round: displayRound })}
                     {step === "idle" && state.history.length > 0 ? (
-                      <span className="life-round-badge__sub">已结算</span>
+                      <span className="life-round-badge__sub">
+                        {messages.life.settled}
+                      </span>
                     ) : (
-                      <span className="life-round-badge__sub">进行中</span>
+                      <span className="life-round-badge__sub">
+                        {messages.life.inProgress}
+                      </span>
                     )}
                   </motion.span>
                 )}
               </div>
-              <p className="life-header__tagline">技能 · 流年 · 叙事</p>
+              <p className="life-header__tagline">{messages.life.tagline}</p>
             </div>
             <div className="life-header__actions">
-              <div className="life-audio-bar" role="group" aria-label="音频">
+              <LocaleSwitcher />
+              <div className="life-audio-bar" role="group" aria-label={audioGroupLabel}>
                 <button
                   type="button"
                   className={`life-audio-btn${sfxEnabled ? " is-on" : ""}`}
                   onClick={toggleSfx}
                   aria-pressed={sfxEnabled}
                 >
-                  音效
+                  {messages.common.sfx}
                 </button>
                 <button
                   type="button"
@@ -481,245 +528,268 @@ export function LifeDetailClient() {
                   onClick={toggleBgm}
                   aria-pressed={bgmEnabled}
                 >
-                  音乐
+                  {messages.common.music}
                 </button>
               </div>
               <Link href="/" className="life-back">
-                ← 返回欢迎页
+                ← {messages.common.back}
               </Link>
             </div>
           </header>
 
-          <main className="life-stage" aria-label="主舞台">
+          <main className="life-stage" aria-label={stageLabel}>
             <AnimatePresence mode="wait">
-        {phase === "name" && (
-          <motion.div
-            key="name"
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.3 }}
-            className="life-panel name-form"
-          >
-            <h2>创建角色</h2>
-            <p style={{ margin: 0, color: "var(--muted)", fontSize: "0.9rem" }}>
-              进入详情页后，将随机生成八大维度初始值（0–100），每年可先分配
-              技能点再推进剧情（规则与年龄相关）。
-            </p>
-            <input
-              value={nameInput}
-              onChange={(e) => setNameInput(e.target.value)}
-              placeholder="你的名字"
-              maxLength={20}
-            />
-            <button type="button" className="primary-btn" onClick={beginLife}>
-              开始人生
-            </button>
-          </motion.div>
-        )}
+              {phase === "name" && (
+                <motion.div
+                  key="name"
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ duration: 0.3 }}
+                  className="life-panel name-form"
+                >
+                  <h2>{messages.life.createCharacter.title}</h2>
+                  <p
+                    style={{ margin: 0, color: "var(--muted)", fontSize: "0.9rem" }}
+                  >
+                    {messages.life.createCharacter.description}
+                  </p>
+                  <input
+                    value={nameInput}
+                    onChange={(e) => setNameInput(e.target.value)}
+                    placeholder={messages.life.createCharacter.placeholder}
+                    maxLength={20}
+                  />
+                  <button type="button" className="primary-btn" onClick={beginLife}>
+                    {messages.life.createCharacter.submit}
+                  </button>
+                </motion.div>
+              )}
 
-        {phase === "play" && state && (
-          <motion.div
-            key="play"
-            className="life-grid"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.35 }}
-          >
-            <div>
-              <motion.section
-                className="life-panel"
-                layout
-                transition={{ type: "spring", stiffness: 320, damping: 28 }}
-              >
-                <h2>角色状态</h2>
-                <p style={{ color: "var(--muted)", fontSize: "0.9rem", marginTop: 0 }}>
-                  {state.name} · {state.age} 岁 · 上限 {ATTR_MAX} 点 / 维
-                </p>
-                <div className="stat-grid">
-                  {ATTR_KEYS.map((k) => (
-                    <motion.div
-                      key={k}
-                      className="stat-card"
-                      data-stat={k}
+              {phase === "play" && state && (
+                <motion.div
+                  key="play"
+                  className="life-grid"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ duration: 0.35 }}
+                >
+                  <div>
+                    <motion.section
+                      className="life-panel"
                       layout
-                      initial={{ opacity: 0, scale: 0.96 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      transition={{ delay: ATTR_KEYS.indexOf(k) * 0.03 }}
+                      transition={{ type: "spring", stiffness: 320, damping: 28 }}
                     >
-                      <div className="label">{ATTR_LABELS[k]}</div>
-                      <div className="value">{state.attrs[k]}</div>
-                    </motion.div>
-                  ))}
-                </div>
-
-                {step === "allocate" && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                  >
-                    <h2 style={{ marginTop: "1.25rem" }}>开启下一年</h2>
-                    <p
-                      style={{
-                        color: "var(--muted)",
-                        fontSize: "0.88rem",
-                        marginTop: 0,
-                      }}
-                    >
-                      {mode === "gain"
-                        ? `下一年（${nextAge} 岁）可分配：${skillBudget} 点，剩余 ${remaining} 点。`
-                        : mode === "lose"
-                          ? `下一年（${nextAge} 岁）需扣除：${Math.abs(skillBudget)} 点，剩余 ${remaining} 点（不允许扣到 0 以下）。`
-                          : `下一年（${nextAge} 岁）不获得技能点，直接开启。`}
-                    </p>
-                    <div className="skill-step-grid">
-                      {ATTR_KEYS.map((k) => {
-                        const delta = alloc[k] ?? 0;
-                        const canPlus = mode === "gain" && remaining > 0;
-                        const canMinus =
-                          (mode === "gain" && delta > 0) ||
-                          (mode === "lose" &&
-                            remaining > 0 &&
-                            state.attrs[k] + delta > 0);
-
-                        const onPlus = () => {
-                          if (busy) return;
-                          if (!canPlus) return;
-                          playSfx(() => sfxSkillTick(1));
-                          setAlloc((prev) => ({ ...prev, [k]: (prev[k] ?? 0) + 1 }));
-                        };
-
-                        const onMinus = () => {
-                          if (busy) return;
-                          if (!canMinus) return;
-                          playSfx(() => sfxSkillTick(-1));
-                          setAlloc((prev) => {
-                            const cur = prev[k] ?? 0;
-                            const next = cur - 1;
-                            if (next === 0) {
-                              // Remove key to keep alloc map small.
-                              const rest: AllocationMap = { ...prev };
-                              delete rest[k];
-                              return rest;
-                            }
-                            return { ...prev, [k]: next };
-                          });
-                        };
-
-                        const preview = clampAttr(state.attrs[k] + delta);
-
-                        return (
-                          <div key={k} className="skill-step">
-                            <div className="skill-step-head">
-                              <div className="skill-step-label">{ATTR_LABELS[k]}</div>
-                              <div className="skill-step-val">{preview}</div>
-                            </div>
-                            <div className="skill-step-actions">
-                              <button
-                                type="button"
-                                className="mini-btn"
-                                disabled={busy || !canMinus}
-                                onClick={onMinus}
-                                aria-label={`${ATTR_LABELS[k]} -1`}
-                              >
-                                -
-                              </button>
-                              <div className="skill-step-delta" aria-label="delta">
-                                {delta > 0 ? `+${delta}` : delta < 0 ? `${delta}` : "0"}
-                              </div>
-                              <button
-                                type="button"
-                                className="mini-btn"
-                                disabled={busy || !canPlus}
-                                onClick={onPlus}
-                                aria-label={`${ATTR_LABELS[k]} +1`}
-                              >
-                                +
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    <button
-                      type="button"
-                      className="primary-btn"
-                      disabled
-                      aria-disabled="true"
-                    >
-                      操作已移到底部指令条
-                    </button>
-                  </motion.div>
-                )}
-
-                {step === "transition" && (
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                  >
-                    <h2 style={{ marginTop: "1.25rem" }}>下一年开启中…</h2>
-                    <div className="year-transition" style={{ marginTop: 8 }}>
-                      <div className="sky" aria-hidden="true" />
-                      <div className="sun-orb" aria-hidden="true" />
-                      <div className="moon-orb" aria-hidden="true" />
-                      <div className="caption">
-                        <div className="cap-title">开启下一年</div>
-                        <div className="cap-sub">
-                          日出日落之间，你又长大了一点点
-                        </div>
-                      </div>
-                    </div>
-                  </motion.div>
-                )}
-
-                {step === "streaming" && (
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                  >
-                    <h2 style={{ marginTop: "1.25rem" }}>这一年……</h2>
-                    <div className="stream-box stream-sun">
-                      <div className="sun-overlay" aria-hidden="true" />
-                      <div className="sun-light" aria-hidden="true" />
-                      <div className="stream-text">{streamText}</div>
-                    </div>
-                    {busy && (
+                      <h2>{messages.life.status.title}</h2>
                       <p
                         style={{
                           color: "var(--muted)",
-                          fontSize: "0.85rem",
-                          marginTop: 8,
+                          fontSize: "0.9rem",
+                          marginTop: 0,
                         }}
                       >
-                        叙事生成中
+                        {t(locale, "life.status.summary", {
+                          name: state.name,
+                          age: state.age,
+                          max: ATTR_MAX,
+                        })}
                       </p>
-                    )}
-                  </motion.div>
-                )}
+                      <div className="stat-grid">
+                        {ATTR_KEYS.map((key) => (
+                          <motion.div
+                            key={key}
+                            className="stat-card"
+                            data-stat={key}
+                            layout
+                            initial={{ opacity: 0, scale: 0.96 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            transition={{ delay: ATTR_KEYS.indexOf(key) * 0.03 }}
+                          >
+                            <div className="label">{statLabel(key)}</div>
+                            <div className="value">{state.attrs[key]}</div>
+                          </motion.div>
+                        ))}
+                      </div>
 
-                {step === "idle" && (
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                  >
-                    <h2 style={{ marginTop: "1.25rem" }}>这一年……</h2>
-                    <div className="stream-box">{streamText}</div>
-                  </motion.div>
-                )}
+                      {step === "allocate" && (
+                        <motion.div
+                          initial={{ opacity: 0, y: 8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                        >
+                          <h2 style={{ marginTop: "1.25rem" }}>
+                            {messages.life.nextYear.title}
+                          </h2>
+                          <p
+                            style={{
+                              color: "var(--muted)",
+                              fontSize: "0.88rem",
+                              marginTop: 0,
+                            }}
+                          >
+                            {mode === "gain"
+                              ? messages.life.nextYear.gainHint({
+                                  nextAge,
+                                  skillBudget,
+                                  remaining,
+                                })
+                              : mode === "lose"
+                                ? messages.life.nextYear.loseHint({
+                                    nextAge,
+                                    remaining: Math.abs(skillBudget),
+                                  })
+                                : messages.life.nextYear.noneHint({ nextAge })}
+                          </p>
+                          <div className="skill-step-grid">
+                            {ATTR_KEYS.map((key) => {
+                              const delta = alloc[key] ?? 0;
+                              const canPlus = mode === "gain" && remaining > 0;
+                              const canMinus =
+                                (mode === "gain" && delta > 0) ||
+                                (mode === "lose" &&
+                                  remaining > 0 &&
+                                  state.attrs[key] + delta > 0);
 
-                {milestone && (
-                  <motion.div
-                    className="milestone-banner"
-                    initial={{ opacity: 0, scale: 0.98 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                  >
-                    {milestone}
-                  </motion.div>
-                )}
-              </motion.section>
-            </div>
-          </motion.div>
-        )}
+                              const onPlus = () => {
+                                if (busy || !canPlus) return;
+                                playSfx(() => sfxSkillTick(1));
+                                setAlloc((prev) => ({
+                                  ...prev,
+                                  [key]: (prev[key] ?? 0) + 1,
+                                }));
+                              };
+
+                              const onMinus = () => {
+                                if (busy || !canMinus) return;
+                                playSfx(() => sfxSkillTick(-1));
+                                setAlloc((prev) => {
+                                  const current = prev[key] ?? 0;
+                                  const next = current - 1;
+                                  if (next === 0) {
+                                    const rest: AllocationMap = { ...prev };
+                                    delete rest[key];
+                                    return rest;
+                                  }
+                                  return { ...prev, [key]: next };
+                                });
+                              };
+
+                              const preview = clampAttr(state.attrs[key] + delta);
+
+                              return (
+                                <div key={key} className="skill-step">
+                                  <div className="skill-step-head">
+                                    <div className="skill-step-label">
+                                      {statLabel(key)}
+                                    </div>
+                                    <div className="skill-step-val">{preview}</div>
+                                  </div>
+                                  <div className="skill-step-actions">
+                                    <button
+                                      type="button"
+                                      className="mini-btn"
+                                      disabled={busy || !canMinus}
+                                      onClick={onMinus}
+                                      aria-label={`${statLabel(key)} -1`}
+                                    >
+                                      -
+                                    </button>
+                                    <div className="skill-step-delta" aria-label="delta">
+                                      {delta > 0 ? `+${delta}` : delta < 0 ? `${delta}` : "0"}
+                                    </div>
+                                    <button
+                                      type="button"
+                                      className="mini-btn"
+                                      disabled={busy || !canPlus}
+                                      onClick={onPlus}
+                                      aria-label={`${statLabel(key)} +1`}
+                                    >
+                                      +
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          <button
+                            type="button"
+                            className="primary-btn"
+                            disabled
+                            aria-disabled="true"
+                          >
+                            {locale === "zh-CN"
+                              ? "操作已移到底部指令条"
+                              : "Controls moved to the command bar below"}
+                          </button>
+                        </motion.div>
+                      )}
+
+                      {step === "transition" && (
+                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                          <h2 style={{ marginTop: "1.25rem" }}>
+                            {messages.life.nextYear.opening}
+                          </h2>
+                          <div className="year-transition" style={{ marginTop: 8 }}>
+                            <div className="sky" aria-hidden="true" />
+                            <div className="sun-orb" aria-hidden="true" />
+                            <div className="moon-orb" aria-hidden="true" />
+                            <div className="caption">
+                              <div className="cap-title">
+                                {messages.life.nextYear.title}
+                              </div>
+                              <div className="cap-sub">
+                                {messages.life.nextYear.openingCaption}
+                              </div>
+                            </div>
+                          </div>
+                        </motion.div>
+                      )}
+
+                      {step === "streaming" && (
+                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                          <h2 style={{ marginTop: "1.25rem" }}>
+                            {messages.life.nextYear.thisYear}
+                          </h2>
+                          <div className="stream-box stream-sun">
+                            <div className="sun-overlay" aria-hidden="true" />
+                            <div className="sun-light" aria-hidden="true" />
+                            <div className="stream-text">{streamText}</div>
+                          </div>
+                          {busy && (
+                            <p
+                              style={{
+                                color: "var(--muted)",
+                                fontSize: "0.85rem",
+                                marginTop: 8,
+                              }}
+                            >
+                              {messages.life.nextYear.generating}
+                            </p>
+                          )}
+                        </motion.div>
+                      )}
+
+                      {step === "idle" && (
+                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                          <h2 style={{ marginTop: "1.25rem" }}>
+                            {messages.life.nextYear.thisYear}
+                          </h2>
+                          <div className="stream-box">{streamText}</div>
+                        </motion.div>
+                      )}
+
+                      {milestone && (
+                        <motion.div
+                          className="milestone-banner"
+                          initial={{ opacity: 0, scale: 0.98 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                        >
+                          {milestone}
+                        </motion.div>
+                      )}
+                    </motion.section>
+                  </div>
+                </motion.div>
+              )}
             </AnimatePresence>
           </main>
 
@@ -729,17 +799,17 @@ export function LifeDetailClient() {
         </div>
       </div>
 
-      <div className="life-commandbar" role="group" aria-label="指令条">
+      <div className="life-commandbar" role="group" aria-label={commandBarLabel}>
         <div className="life-commandbar__inner">
           <div className="life-commandbar__left">
             <div className="life-commandbar__hint">
               {phase === "play" && state
                 ? mode === "gain"
-                  ? `剩余 ${remaining} 点`
+                  ? remainingHintLabel
                   : mode === "lose"
-                    ? `待扣 ${remaining} 点`
-                    : "本年无需分配"
-                : "准备开始"}
+                    ? removeHintLabel
+                    : noAllocationLabel
+                : readyLabel}
             </div>
           </div>
           <div className="life-commandbar__center">{primaryCta}</div>
@@ -750,7 +820,7 @@ export function LifeDetailClient() {
               onClick={() => setJournalOpen(true)}
               disabled={phase !== "play" || !state}
             >
-              年鉴
+              {journalTitle}
             </button>
           </div>
         </div>
@@ -761,22 +831,22 @@ export function LifeDetailClient() {
           className="life-drawer"
           role="dialog"
           aria-modal="true"
-          aria-label="年鉴"
+          aria-label={journalTitle}
         >
           <button
             type="button"
             className="life-drawer__overlay"
-            aria-label="关闭年鉴"
+            aria-label={drawerCloseLabel}
             onClick={() => setJournalOpen(false)}
           />
           <div className="life-drawer__panel">
             <div className="life-drawer__header">
-              <div className="life-drawer__title">年鉴</div>
+              <div className="life-drawer__title">{journalTitle}</div>
               <button
                 type="button"
                 className="life-drawer__close"
                 onClick={() => setJournalOpen(false)}
-                aria-label="关闭"
+                aria-label={drawerCloseLabel}
               >
                 ✕
               </button>

@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { LocaleProvider } from "@/lib/i18n/client-locale";
 
 export const metadata: Metadata = {
-  title: "LifeSimulator · 中式人生模拟器",
-  description: "欢迎页 + 人生成长详情 · 技能点与流式叙事",
+  title: "LifeSimulator",
+  description: "A bilingual life simulation demo with yearly progression.",
 };
 
 export default function RootLayout({
@@ -12,8 +13,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="zh-CN">
-      <body>{children}</body>
+    <html lang="en">
+      <body>
+        <LocaleProvider>{children}</LocaleProvider>
+      </body>
     </html>
   );
 }

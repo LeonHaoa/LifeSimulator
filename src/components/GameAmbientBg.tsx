@@ -1,5 +1,7 @@
 "use client";
 
+import React from "react";
+
 /**
  * Decorative full-screen ambient layer (blobs, grid, stars). No pointer events.
  */

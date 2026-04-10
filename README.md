@@ -81,6 +81,13 @@ npm run dev:fresh
 
 点击「导出存档 JSON」下载 `life-simulator-save.json`，结构：`schemaVersion`、`exportedAt`、`game`。**不提供导入**（见功能设计选项 B）。
 
+## 多语言
+
+- Source locale：`en`
+- 当前支持语言：`en`、`zh-CN`
+- 当前语言通过客户端界面切换，并会随年度请求一起发送到 `/api/year` 与 `/api/year/stream`
+- Kimi 请求会显式携带当前 `locale`，并明确要求模型按该语言回复
+
 ## 部署到 Cloudflare Pages
 
 1. 以本仓库连接 **Cloudflare Pages**。  

@@ -64,3 +64,8 @@ Use this file to record product-level terminology decisions. Keep it short, stab
 
 - Whether `Life Simulator` should later become a more distinctive branded English subtitle.
 - Whether `Almanac` should remain the long-term label or be changed to `History` for broader clarity.
+
+## Current Status
+
+- Implemented bilingual dictionaries for `en` and `zh-CN`.
+- UI, fallback narrative, event titles, and Kimi prompt language control now use locale-aware dictionary data.

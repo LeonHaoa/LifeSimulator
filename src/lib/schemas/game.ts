@@ -1,9 +1,11 @@
 import { z } from "zod";
 import { ATTR_KEYS, ATTR_MAX } from "@/lib/constants";
+import { SUPPORTED_LOCALES } from "@/lib/i18n/types";
 
 const attrNum = z.number().int().min(0).max(ATTR_MAX);
 
 export const AttrKeySchema = z.enum(ATTR_KEYS);
+export const LocaleSchema = z.enum(SUPPORTED_LOCALES);
 
 export const AttrsSchema = z.object({
   happiness: attrNum,
@@ -43,6 +45,7 @@ export type AttrKey = z.infer<typeof AttrKeySchema>;
 export const YearApiRequestSchema = z.object({
   schemaVersion: z.number().int(),
   stream: z.boolean().optional(),
+  locale: LocaleSchema,
   state: GameStateSchema,
 });
 
