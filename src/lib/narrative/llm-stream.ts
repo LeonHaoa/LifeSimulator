@@ -4,7 +4,9 @@ import {
   LLM_RETRY_DELAY_MS,
 } from "@/lib/constants";
 import type { AttrKey } from "@/lib/constants";
+import type { Locale } from "@/lib/i18n/types";
 import { skillLabel } from "./skill-flavor";
+import { buildNarrativeSystemPrompt } from "./llm-prompt";
 
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
@@ -24,6 +26,7 @@ function parseSseLines(
  * Stream plain-text narrative tokens from OpenAI chat completions (stream: true).
  */
 export async function* streamLlmNarrativePlain(input: {
+  locale: Locale;
   name: string;
   age: number;
   eventIds: string[];
@@ -41,9 +44,10 @@ export async function* streamLlmNarrativePlain(input: {
     name: input.name,
     age: input.age,
     eventIds: input.eventIds,
+    locale: input.locale,
   };
   if (input.skillKey) {
-    userPayload.skillFocus = skillLabel(input.skillKey);
+    userPayload.skillFocus = skillLabel(input.locale, input.skillKey);
   }
 
   const body = {
@@ -53,8 +57,10 @@ export async function* streamLlmNarrativePlain(input: {
     messages: [
       {
         role: "system",
-        content:
-          "你是中式吐槽叙事机。直接输出叙述正文，不要用 Markdown、不要编号、不要 JSON。3–8 句中文，幽默损；若有 skillFocus，结尾自然呼应那个维度。",
+        content: [
+          buildNarrativeSystemPrompt(input.locale, "plain"),
+          "Output plain text only. Do not use Markdown, numbering, or JSON.",
+        ].join("\n"),
       },
       {
         role: "user",

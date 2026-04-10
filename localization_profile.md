@@ -117,3 +117,6 @@ Notes:
 - Current phase only supports en and zh-CN.
 - This project intentionally uses en as source locale even though the existing product copy started in Chinese.
 - Kimi requests must receive the current locale and an explicit language instruction for the response.
+- Dictionary foundation implemented under `messages/` and `src/lib/i18n/`.
+- Event titles now resolve from `titleKey` instead of raw localized strings in data.
+- Locale is currently persisted in client storage via `life-simulator.locale`.

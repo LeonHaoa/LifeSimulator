@@ -1,5 +1,6 @@
 "use client";
 
+import React from "react";
 import { useLocale } from "@/lib/i18n/client-locale";
 
 export function LocaleSwitcher() {

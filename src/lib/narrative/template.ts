@@ -1,18 +1,22 @@
 import type { AttrKey } from "@/lib/constants";
+import type { Locale } from "@/lib/i18n/types";
+import { getDictionary } from "@/lib/i18n/dictionary";
 import { skillFlavorLine } from "./skill-flavor";
 
 export function templateNarrative(
+  locale: Locale,
   name: string,
   age: number,
   eventTitles: string[],
   skillKey?: AttrKey
 ): string {
-  const bits = eventTitles.join("；");
-  let body = `${name} 在 ${age} 岁这一年：${bits}。`;
+  const copy = getDictionary(locale);
+  const bits = eventTitles.join(locale === "zh-CN" ? "；" : "; ");
+  let body = copy.narrative.yearLine({ name, age, events: bits });
   if (skillKey) {
-    body += skillFlavorLine(skillKey);
+    body += ` ${skillFlavorLine(locale, skillKey)}`;
   } else {
-    body += "日子还得过。";
+    body += ` ${copy.narrative.idleLine}`;
   }
   return body;
 }

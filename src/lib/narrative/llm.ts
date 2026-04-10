@@ -4,14 +4,17 @@ import {
   LLM_RETRY_DELAY_MS,
 } from "@/lib/constants";
 import type { AttrKey } from "@/lib/constants";
+import type { Locale } from "@/lib/i18n/types";
 import { skillLabel } from "./skill-flavor";
 import { LlmNarrativeJsonSchema } from "@/lib/schemas/game";
+import { buildNarrativeSystemPrompt } from "./llm-prompt";
 
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
 export async function fetchLlmNarrative(input: {
+  locale: Locale;
   name: string;
   age: number;
   eventIds: string[];
@@ -29,9 +32,10 @@ export async function fetchLlmNarrative(input: {
     name: input.name,
     age: input.age,
     eventIds: input.eventIds,
+    locale: input.locale,
   };
   if (input.skillKey) {
-    userPayload.skillFocus = skillLabel(input.skillKey);
+    userPayload.skillFocus = skillLabel(input.locale, input.skillKey);
   }
 
   const body = {
@@ -41,8 +45,10 @@ export async function fetchLlmNarrative(input: {
     messages: [
       {
         role: "system",
-        content:
-          '你是中式吐槽叙事机。只输出 JSON：{"text":"..."}。3–8句中文，幽默损；若给出 skillFocus，要在结尾自然呼应这个维度（快乐/健康等），不要说教。',
+        content: [
+          buildNarrativeSystemPrompt(input.locale, "json"),
+          'Only output JSON: {"text":"..."}',
+        ].join("\n"),
       },
       {
         role: "user",
