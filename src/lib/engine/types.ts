@@ -1,4 +1,5 @@
 import type { GameState } from "@/lib/schemas/game";
+import type { Messages } from "@/lib/i18n/types";
 
 export type EventConditions = {
   happinessMin?: number;
@@ -41,7 +42,7 @@ export type GameEvent = {
   tags: string[];
   conditions: EventConditions;
   deltas: AttrDeltas;
-  title: string;
+  titleKey: keyof Messages["events"];
 };
 
 export type AdvanceYearResult = {

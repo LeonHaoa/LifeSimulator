@@ -6,7 +6,7 @@
     "tags": ["fallback"],
     "conditions": {},
     "deltas": {},
-    "title": "又混过了一年"
+    "titleKey": "fallbackBreath"
   },
   {
     "id": "brick",
@@ -15,7 +15,7 @@
     "tags": ["work", "poor"],
     "conditions": { "wealthMax": 35 },
     "deltas": { "wealth": 50, "health": -30 },
-    "title": "工地搬砖"
+    "titleKey": "brick"
   },
   {
     "id": "debut",
@@ -24,7 +24,7 @@
     "tags": ["showbiz"],
     "conditions": { "happinessMin": 75, "ageMin": 16 },
     "deltas": { "happiness": 40, "wealth": 80 },
-    "title": "被星探递名片"
+    "titleKey": "debut"
   },
   {
     "id": "gaokao",
@@ -33,7 +33,7 @@
     "tags": ["school"],
     "conditions": { "ageMin": 17, "ageMax": 19, "wealthMax": 60 },
     "deltas": { "study": 60, "health": -40 },
-    "title": "高三，卷子比人高"
+    "titleKey": "gaokao"
   },
   {
     "id": "tag-bonus-after-work",
@@ -42,7 +42,7 @@
     "tags": ["callback"],
     "conditions": { "requiresRecentTag": "work" },
     "deltas": { "wealth": 40 },
-    "title": "工头觉得你手速快，多给一盒饭"
+    "titleKey": "tagBonusAfterWork"
   },
   {
     "id": "easter-name-long",
@@ -51,6 +51,6 @@
     "tags": ["easter"],
     "conditions": { "nameMinChars": 4 },
     "deltas": { "career": 35 },
-    "title": "名字够长，算命先生多送半句"
+    "titleKey": "easterNameLong"
   }
 ]
