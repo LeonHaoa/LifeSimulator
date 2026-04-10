@@ -12,7 +12,6 @@ import {
   validateNewName,
 } from "@/lib/engine/initial-state";
 import { GameAmbientBg } from "@/components/GameAmbientBg";
-import { LocaleSwitcher } from "@/components/LocaleSwitcher";
 import { t } from "@/lib/i18n/dictionary";
 import { useLocale } from "@/lib/i18n/client-locale";
 import type { Locale } from "@/lib/i18n/types";
@@ -512,7 +511,6 @@ export function LifeDetailClient() {
               <p className="life-header__tagline">{messages.life.tagline}</p>
             </div>
             <div className="life-header__actions">
-              <LocaleSwitcher />
               <div className="life-audio-bar" role="group" aria-label={audioGroupLabel}>
                 <button
                   type="button"
