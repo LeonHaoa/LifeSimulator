@@ -13,7 +13,9 @@
     "start:local": "node scripts/free-port.mjs 3001 && LLM_TIMEOUT_MS=20000 next start --hostname 127.0.0.1 --port 3001",
     "lint": "eslint \"src/**/*.{ts,tsx}\"",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
+    "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy"
   },
   "dependencies": {
     "framer-motion": "^12.38.0",
@@ -23,6 +25,7 @@
     "zod": "^3.24.0"
   },
   "devDependencies": {
+    "@opennextjs/cloudflare": "^1.19.0",
     "@eslint/eslintrc": "^3.3.5",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
@@ -30,6 +33,7 @@
     "eslint": "^9.0.0",
     "eslint-config-next": "^15.1.0",
     "typescript": "^5.7.0",
-    "vitest": "^3.0.0"
+    "vitest": "^3.0.0",
+    "wrangler": "^4.81.1"
   }
 }
