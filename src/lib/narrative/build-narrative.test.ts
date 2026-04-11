@@ -34,4 +34,31 @@ describe("buildNarrative", () => {
     expect(r.text).toContain("Alex");
     expect(r.text.toLowerCase()).toContain("happiness");
   });
+
+  it("uses death template when deceased and no API key", async () => {
+    process.env.OPENAI_API_KEY = "";
+    const r = await buildNarrative({
+      locale: "en",
+      name: "Alex",
+      age: 92,
+      runSeed: 1,
+      attrs: {
+        happiness: 10,
+        health: 10,
+        wealth: 10,
+        career: 10,
+        study: 10,
+        social: 10,
+        love: 10,
+        marriage: 10,
+      },
+      historyForSkills: [],
+      eventIds: [],
+      eventTitles: [],
+      deceased: true,
+    });
+    expect(r.fallback).toBe(true);
+    expect(r.text).toContain("Alex");
+    expect(r.text).toContain("92");
+  });
 });

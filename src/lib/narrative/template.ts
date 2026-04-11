@@ -20,3 +20,11 @@ export function templateNarrative(
   }
   return body;
 }
+
+export function templateDeathNarrative(
+  locale: Locale,
+  name: string,
+  age: number
+): string {
+  return getDictionary(locale).narrative.deathYear({ name, age });
+}

@@ -18,6 +18,7 @@ describe("dictionary", () => {
     expect(Object.keys(en.life)).toEqual(Object.keys(zh.life));
     expect(Object.keys(en.stats)).toEqual(Object.keys(zh.stats));
     expect(Object.keys(en.events)).toEqual(Object.keys(zh.events));
+    expect(Object.keys(en.narrative)).toEqual(Object.keys(zh.narrative));
   });
 
   it("interpolates translated copy", () => {

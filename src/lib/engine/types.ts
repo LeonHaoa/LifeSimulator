@@ -49,4 +49,6 @@ export type AdvanceYearResult = {
   nextState: GameState;
   pickedEvents: GameEvent[];
   engineFallback: boolean;
+  /** True when mortality ended the run this advance (no yearly events applied). */
+  deathOccurred: boolean;
 };

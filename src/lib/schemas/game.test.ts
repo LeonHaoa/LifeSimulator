@@ -25,6 +25,30 @@ describe("schemas", () => {
     expect(parsed.age).toBe(0);
   });
 
+  it("parses optional diedAtAge", () => {
+    const parsed = GameStateSchema.parse({
+      schemaVersion: 2,
+      name: "张三",
+      runSeed: 42,
+      age: 88,
+      diedAtAge: 88,
+      attrs: {
+        happiness: 10,
+        health: 20,
+        wealth: 30,
+        career: 40,
+        study: 50,
+        social: 60,
+        love: 70,
+        marriage: 80,
+      },
+      recentTags: [],
+      milestonesShown: {},
+      history: [],
+    });
+    expect(parsed.diedAtAge).toBe(88);
+  });
+
   it("requires a supported locale in the yearly request", () => {
     const parsed = YearApiRequestSchema.safeParse({
       schemaVersion: 2,

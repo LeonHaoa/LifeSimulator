@@ -27,6 +27,8 @@ it("increments age by 1 and returns 1–3 events", () => {
   const events = loadEvents();
   const r = advanceYear(base, events);
   expect(r.nextState.age).toBe(1);
+  expect(r.deathOccurred).toBe(false);
+  expect(r.nextState.diedAtAge).toBeUndefined();
   expect(r.pickedEvents.length).toBeGreaterThanOrEqual(1);
   expect(r.pickedEvents.length).toBeLessThanOrEqual(3);
 });
@@ -57,6 +59,17 @@ it("marks engineFallback when candidate pool was empty", () => {
     },
   };
   const r = advanceYear(blocked, onlyFallback);
+  expect(r.deathOccurred).toBe(false);
   expect(r.engineFallback).toBe(true);
   expect(r.pickedEvents[0].id).toBe("fallback-breath");
+});
+
+it("throws when advancing a deceased character", () => {
+  const events = loadEvents();
+  const dead: GameState = {
+    ...base,
+    age: 5,
+    diedAtAge: 5,
+  };
+  expect(() => advanceYear(dead, events)).toThrow(/deceased/i);
 });

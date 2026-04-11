@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:cf": "OPENNEXT_CLOUDFLARE_DEV=1 next dev",
     "dev:local": "node scripts/free-port.mjs 3001 && next dev --hostname 127.0.0.1 --port 3001",
     "dev:stable": "node scripts/free-port.mjs 3001 && LLM_TIMEOUT_MS=20000 WATCHPACK_POLLING=true CHOKIDAR_USEPOLLING=true next dev --hostname 127.0.0.1 --port 3001",
     "dev:fresh": "node -e \"require('fs').rmSync('.next',{recursive:true,force:true});\" && npm run dev:stable",

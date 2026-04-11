@@ -3,7 +3,7 @@
 import React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import type { GameState, YearApiResponse } from "@/lib/schemas/game";
 import { ATTR_KEYS, ATTR_MAX, SCHEMA_VERSION, yearlySkillPoints } from "@/lib/constants";
 import type { AttrKey } from "@/lib/constants";
@@ -144,6 +144,7 @@ async function consumeYearStream(
 
 export function LifeDetailClient() {
   const { locale, messages } = useLocale();
+  const reduceMotion = useReducedMotion();
   const [phase, setPhase] = useState<Phase>("name");
   const [step, setStep] = useState<Step>("allocate");
   const [nameInput, setNameInput] = useState("");
@@ -156,6 +157,7 @@ export function LifeDetailClient() {
   const [sfxEnabled, setSfxEnabled] = useState(true);
   const [bgmEnabled, setBgmEnabled] = useState(false);
   const [journalOpen, setJournalOpen] = useState(false);
+  const [deathCurtainDismissed, setDeathCurtainDismissed] = useState(false);
   const heldStreamQueueRef = useRef("");
   const renderQueueRef = useRef("");
   const flushingRef = useRef(false);
@@ -255,6 +257,24 @@ export function LifeDetailClient() {
   };
 
   const nextAge = state ? state.age + 1 : 1;
+  const isDead = state != null && state.diedAtAge != null;
+
+  useEffect(() => {
+    if (!isDead) setDeathCurtainDismissed(false);
+  }, [isDead]);
+
+  const deathCurtainOpen =
+    isDead && step === "idle" && !deathCurtainDismissed && state != null;
+
+  useEffect(() => {
+    if (!deathCurtainOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setDeathCurtainDismissed(true);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [deathCurtainOpen]);
+
   const skillBudget = useMemo(() => yearlySkillPoints(nextAge), [nextAge]);
   const spent = useMemo(() => sumAlloc(alloc), [alloc]);
   const remaining = useMemo(() => {
@@ -269,10 +289,10 @@ export function LifeDetailClient() {
   }, [skillBudget]);
 
   const canStartYear = useMemo(() => {
-    if (!state || busy) return false;
+    if (!state || busy || isDead) return false;
     if (mode === "none") return true;
     return remaining === 0;
-  }, [state, busy, mode, remaining]);
+  }, [state, busy, isDead, mode, remaining]);
 
   const displayRound = useMemo(() => {
     if (!state) return 1;
@@ -455,13 +475,19 @@ export function LifeDetailClient() {
               : messages.life.nextYear.start}
         </button>
       ) : step === "idle" ? (
-        <button
-          type="button"
-          className="life-commandbar__primary"
-          onClick={prepareNextYear}
-        >
-          {messages.life.nextYear.next}
-        </button>
+        isDead ? (
+          <button type="button" className="life-commandbar__primary" disabled>
+            {messages.life.gameOver.ended}
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="life-commandbar__primary"
+            onClick={prepareNextYear}
+          >
+            {messages.life.nextYear.next}
+          </button>
+        )
       ) : (
         <button type="button" className="life-commandbar__primary" disabled>
           {step === "transition"
@@ -479,7 +505,9 @@ export function LifeDetailClient() {
     <>
       <GameAmbientBg variant="life" />
       <div className="life-shell">
-        <div className="life-page">
+        <div
+          className={`life-page${isDead ? " life-page--deceased" : ""}`}
+        >
           <header className="life-header">
             <div className="life-header__brand">
               <span className="life-hud-badge" aria-hidden="true">
@@ -490,13 +518,21 @@ export function LifeDetailClient() {
                 {phase === "play" && state && (
                   <motion.span
                     key={roundBadgeKey}
-                    className="life-round-badge"
+                    className={`life-round-badge${
+                      isDead && step === "idle"
+                        ? " life-round-badge--final"
+                        : ""
+                    }`}
                     initial={{ scale: 0.65, opacity: 0, rotate: -10 }}
                     animate={{ scale: 1, opacity: 1, rotate: 0 }}
                     transition={{ type: "spring", stiffness: 460, damping: 24 }}
                   >
                     {messages.life.round({ round: displayRound })}
-                    {step === "idle" && state.history.length > 0 ? (
+                    {isDead && step === "idle" ? (
+                      <span className="life-round-badge__sub">
+                        {messages.life.gameOver.roundEnded}
+                      </span>
+                    ) : step === "idle" && state.history.length > 0 ? (
                       <span className="life-round-badge__sub">
                         {messages.life.settled}
                       </span>
@@ -574,7 +610,9 @@ export function LifeDetailClient() {
                 >
                   <div>
                     <motion.section
-                      className="life-panel"
+                      className={`life-panel${
+                        isDead ? " life-panel--deceased" : ""
+                      }`}
                       layout
                       transition={{ type: "spring", stiffness: 320, damping: 28 }}
                     >
@@ -591,6 +629,12 @@ export function LifeDetailClient() {
                           age: state.age,
                           max: ATTR_MAX,
                         })}
+                        {isDead ? (
+                          <span style={{ color: "var(--muted)" }}>
+                            {" "}
+                            · {messages.life.gameOver.badge}
+                          </span>
+                        ) : null}
                       </p>
                       <div className="stat-grid">
                         {ATTR_KEYS.map((key) => (
@@ -609,7 +653,7 @@ export function LifeDetailClient() {
                         ))}
                       </div>
 
-                      {step === "allocate" && (
+                      {step === "allocate" && !isDead && (
                         <motion.div
                           initial={{ opacity: 0, y: 8 }}
                           animate={{ opacity: 1, y: 0 }}
@@ -714,9 +758,7 @@ export function LifeDetailClient() {
                             disabled
                             aria-disabled="true"
                           >
-                            {locale === "zh-CN"
-                              ? "操作已移到底部指令条"
-                              : "Controls moved to the command bar below"}
+                            {messages.life.nextYear.commandBarRelocated}
                           </button>
                         </motion.div>
                       )}
@@ -771,7 +813,13 @@ export function LifeDetailClient() {
                           <h2 style={{ marginTop: "1.25rem" }}>
                             {messages.life.nextYear.thisYear}
                           </h2>
-                          <div className="stream-box">{streamText}</div>
+                          <div
+                            className={`stream-box${
+                              isDead ? " stream-box--epitaph" : ""
+                            }`}
+                          >
+                            {streamText}
+                          </div>
                         </motion.div>
                       )}
 
@@ -823,6 +871,93 @@ export function LifeDetailClient() {
           </div>
         </div>
       </div>
+
+      <AnimatePresence>
+        {deathCurtainOpen && (
+          <motion.div
+            key="death-curtain"
+            className="life-gameover-root"
+            role="presentation"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{
+              duration: reduceMotion ? 0.05 : 0.35,
+              ease: [0.22, 1, 0.36, 1],
+            }}
+          >
+            <motion.button
+              type="button"
+              className="life-gameover-backdrop"
+              aria-label={messages.life.gameOver.acknowledge}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: reduceMotion ? 0.05 : 0.4 }}
+              onClick={() => setDeathCurtainDismissed(true)}
+            />
+            <motion.div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="life-gameover-title"
+              className="life-gameover-card"
+              initial={
+                reduceMotion
+                  ? { opacity: 0 }
+                  : { opacity: 0, scale: 0.9, y: 24 }
+              }
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={
+                reduceMotion
+                  ? { opacity: 0 }
+                  : { opacity: 0, scale: 0.96, y: 12 }
+              }
+              transition={
+                reduceMotion
+                  ? { duration: 0.12 }
+                  : { type: "spring", stiffness: 360, damping: 28 }
+              }
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="life-gameover-ripples" aria-hidden="true">
+                <span className="life-gameover-ripple" />
+                <span className="life-gameover-ripple life-gameover-ripple--delay" />
+              </div>
+              <p className="life-gameover-kicker" aria-hidden="true">
+                ◈
+              </p>
+              <h2 id="life-gameover-title" className="life-gameover-title">
+                {messages.life.gameOver.title}
+              </h2>
+              <p className="life-gameover-subtitle">
+                {messages.life.gameOver.subtitle({
+                  age: state.diedAtAge ?? state.age,
+                })}
+              </p>
+              <p className="life-gameover-hint">{messages.life.gameOver.hint}</p>
+              <div className="life-gameover-actions">
+                <button
+                  type="button"
+                  className="primary-btn life-gameover-btn-primary"
+                  onClick={() => setDeathCurtainDismissed(true)}
+                >
+                  {messages.life.gameOver.acknowledge}
+                </button>
+                <button
+                  type="button"
+                  className="life-gameover-btn-secondary"
+                  onClick={() => {
+                    setDeathCurtainDismissed(true);
+                    setJournalOpen(true);
+                  }}
+                >
+                  {messages.life.gameOver.openAlmanac}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {journalOpen && (
         <div

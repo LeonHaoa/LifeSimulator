@@ -18,4 +18,12 @@ const nextConfig: NextConfig = {
 
 export default nextConfig;
 
-initOpenNextCloudflareForDev();
+/**
+ * Miniflare/workerd starts SQLite-backed state; running on every `next dev` can hit
+ * SQLITE_BUSY (dual Next config processes, stale workerd, or parallel dev servers).
+ * This app does not call `getCloudflareContext` in src — plain Node dev is enough locally.
+ * Set OPENNEXT_CLOUDFLARE_DEV=1 when you need Wrangler/Workers parity during dev.
+ */
+if (process.env.OPENNEXT_CLOUDFLARE_DEV === "1") {
+  void initOpenNextCloudflareForDev();
+}

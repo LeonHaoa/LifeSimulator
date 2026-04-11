@@ -38,10 +38,8 @@ export async function POST(req: Request) {
     const copy = getDictionary(locale);
     const skillAlloc = parsed.data.state.lastSkillAllocation;
     const events = loadEvents();
-    const { nextState: advanced, pickedEvents, engineFallback } = advanceYear(
-      parsed.data.state,
-      events
-    );
+    const { nextState: advanced, pickedEvents, engineFallback, deathOccurred } =
+      advanceYear(parsed.data.state, events);
 
     const narrative = await buildNarrative({
       locale,
@@ -53,6 +51,7 @@ export async function POST(req: Request) {
       eventIds: pickedEvents.map((e) => e.id),
       eventTitles: pickedEvents.map((e) => copy.events[e.titleKey].title),
       skillKey: skillAlloc,
+      deceased: deathOccurred,
     });
 
     const { milestonesShown, message: milestoneMessage } = applyMilestone(

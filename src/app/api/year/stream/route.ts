@@ -7,7 +7,7 @@ import {
 import { loadEvents } from "@/lib/engine/events";
 import { advanceYear } from "@/lib/engine/advance-year";
 import { applyMilestone } from "@/lib/milestones";
-import { templateNarrative } from "@/lib/narrative/template";
+import { templateDeathNarrative, templateNarrative } from "@/lib/narrative/template";
 import {
   streamLlmNarrativePlain,
   streamTemplateChunks,
@@ -59,7 +59,7 @@ export async function POST(req: Request) {
       try {
         const copy = getDictionary(locale);
         const events = loadEvents();
-        const { nextState: advanced, pickedEvents, engineFallback } =
+        const { nextState: advanced, pickedEvents, engineFallback, deathOccurred } =
           advanceYear(parsed.data.state, events);
 
         const eventIds = pickedEvents.map((e) => e.id);
@@ -69,31 +69,48 @@ export async function POST(req: Request) {
         let usedLlm = false;
         let fromTemplate = false;
 
-        for await (const piece of streamLlmNarrativePlain({
-          locale,
-          name: advanced.name,
-          age: advanced.age,
-          runSeed: advanced.runSeed,
-          attrs: advanced.attrs,
-          historyForSkills: parsed.data.state.history,
-          eventIds,
-          eventTitles,
-          skillKey: skillAlloc,
-        })) {
-          usedLlm = true;
-          fullText += piece;
-          send({ type: "delta", text: piece });
+        const apiKeyPresent = Boolean(process.env.OPENAI_API_KEY?.trim());
+        if (deathOccurred && !apiKeyPresent) {
+          fromTemplate = true;
+          const deathText = templateDeathNarrative(
+            locale,
+            advanced.name,
+            advanced.age
+          );
+          for await (const piece of streamTemplateChunks(deathText)) {
+            fullText += piece;
+            send({ type: "delta", text: piece });
+          }
+        } else {
+          for await (const piece of streamLlmNarrativePlain({
+            locale,
+            name: advanced.name,
+            age: advanced.age,
+            runSeed: advanced.runSeed,
+            attrs: advanced.attrs,
+            historyForSkills: parsed.data.state.history,
+            eventIds,
+            eventTitles,
+            skillKey: skillAlloc,
+            deceased: deathOccurred,
+          })) {
+            usedLlm = true;
+            fullText += piece;
+            send({ type: "delta", text: piece });
+          }
         }
 
         if (!fullText.trim()) {
           fromTemplate = true;
-          const templateText = templateNarrative(
-            locale,
-            advanced.name,
-            advanced.age,
-            eventTitles,
-            skillAlloc
-          );
+          const templateText = deathOccurred
+            ? templateDeathNarrative(locale, advanced.name, advanced.age)
+            : templateNarrative(
+                locale,
+                advanced.name,
+                advanced.age,
+                eventTitles,
+                skillAlloc
+              );
           for await (const piece of streamTemplateChunks(templateText)) {
             fullText += piece;
             send({ type: "delta", text: piece });

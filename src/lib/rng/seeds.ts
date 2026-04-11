@@ -18,3 +18,8 @@ export function hashNameToRunSeed(raw: string): number {
 export function yearSeed(runSeed: number, ageAfterAdvance: number): number {
   return fnv1a32(`${runSeed}:${ageAfterAdvance}`);
 }
+
+/** Separate stream from `yearSeed` so mortality rolls do not change event RNG. */
+export function mortalitySeed(runSeed: number, ageAfterAdvance: number): number {
+  return fnv1a32(`${runSeed}:${ageAfterAdvance}:mortality`);
+}

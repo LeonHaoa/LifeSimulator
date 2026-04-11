@@ -48,12 +48,24 @@ export type Messages = {
       thisYear: string;
       generating: string;
       next: string;
+      /** Shown on disabled placeholder when skill UI is duplicated in command bar. */
+      commandBarRelocated: string;
     };
     almanac: {
       title: string;
       empty: string;
       localNarrative: string;
       export: string;
+    };
+    gameOver: {
+      ended: string;
+      badge: string;
+      title: string;
+      subtitle: MessageTemplate;
+      hint: string;
+      acknowledge: string;
+      openAlmanac: string;
+      roundEnded: string;
     };
   };
   errors: {
@@ -87,6 +99,7 @@ export type Messages = {
   narrative: {
     idleLine: string;
     yearLine: MessageTemplate;
+    deathYear: MessageTemplate;
     skillFlavor: Record<
       | "happiness"
       | "health"

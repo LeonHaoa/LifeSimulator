@@ -91,6 +91,7 @@ export function buildNarrativeUserJson(input: {
   eventIds: string[];
   eventTitles: string[];
   skillKey?: AttrKey;
+  deceased?: boolean;
 }): string {
   const events = input.eventIds.map((id, index) => ({
     id,
@@ -114,6 +115,10 @@ export function buildNarrativeUserJson(input: {
     skillAllocation,
     thisYearEvents: events,
   };
+
+  if (input.deceased) {
+    payload.lifeStatus = "deceased";
+  }
 
   if (input.skillKey) {
     payload.skillFocus = skillLabel(input.locale, input.skillKey);

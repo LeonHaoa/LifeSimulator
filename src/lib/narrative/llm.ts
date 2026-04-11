@@ -46,6 +46,7 @@ export async function fetchLlmNarrative(input: {
   eventIds: string[];
   eventTitles: string[];
   skillKey?: AttrKey;
+  deceased?: boolean;
 }): Promise<string | null> {
   const key = process.env.OPENAI_API_KEY?.trim();
   const debug = process.env.LLM_DEBUG === "1";

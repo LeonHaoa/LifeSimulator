@@ -35,6 +35,12 @@ OPENAI_API_KEY=你的_key
 npm run dev:stable
 ```
 
+**默认 `npm run dev` / `dev:stable`：** 不再自动启动 OpenNext 的 Miniflare（避免本机出现 `SQLITE_BUSY` / `database is locked` 导致进程直接退出）。部署前仍用 `npm run preview` / `opennextjs-cloudflare` 验证 Worker。若必须在开发里模拟 Cloudflare 运行时，再执行：
+
+```bash
+npm run dev:cf
+```
+
 若开发中曾出现 **`SegmentViewNode` / `React Client Manifest`**、**`Cannot find module './611.js'`** 等错误，多半是 **`.next` 缓存与 HMR 不一致**。请先 **停掉 dev**，再执行：
 
 ```bash
@@ -87,6 +93,12 @@ npm run dev:fresh
 - 当前支持语言：`en`、`zh-CN`
 - 当前语言通过客户端界面切换，并会随年度请求一起发送到 `/api/year` 与 `/api/year/stream`
 - Kimi 请求会显式携带当前 `locale`，并明确要求模型按该语言回复
+
+## 死亡与终局
+
+- 每年推进前，引擎用 **独立随机流** `mortalitySeed(runSeed, 下一岁年龄)` 抽一次：**年龄段基线年死亡率 × 健康修正**；通过则正常抽事件，未通过则本年进入 **离世** 状态（`state.diedAtAge`），**不再应用年度事件**。
+- 基线为简化生命表量级（玩法向，非精算）；健康越高，有效死亡率越低；健康越低越高。详见 `src/lib/engine/mortality.ts`。
+- 离世后客户端不可再「下一年」，仍可查看年鉴与导出存档；叙事在 JSON 中带 `lifeStatus: "deceased"` 供 LLM 写收尾，无 Key 时用模板 `narrative.deathYear`。
 
 ## 部署到 Cloudflare Pages
 

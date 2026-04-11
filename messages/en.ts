@@ -45,12 +45,24 @@ const en: Messages = {
       thisYear: "This Year...",
       generating: "Generating narrative",
       next: "Next Year",
+      commandBarRelocated: "Controls moved to the command bar below",
     },
     almanac: {
       title: "Almanac",
       empty: "No records yet",
       localNarrative: "Local narrative",
       export: "Export Save JSON",
+    },
+    gameOver: {
+      ended: "Life ended",
+      badge: "Deceased",
+      title: "The journey ends",
+      subtitle: ({ age }) =>
+        `Your story closes at age ${age}. This run is over, but the almanac remembers.`,
+      hint: "You can still read the almanac or export your save.",
+      acknowledge: "Continue",
+      openAlmanac: "Open almanac",
+      roundEnded: "Final chapter",
     },
   },
   errors: {
@@ -82,6 +94,8 @@ const en: Messages = {
   narrative: {
     idleLine: "Life keeps moving.",
     yearLine: ({ name, age, events }) => `${name} at age ${age}: ${events}.`,
+    deathYear: ({ name, age }) =>
+      `${name} did not reach the next sunrise — life closed the book at age ${age}. The run ends here; what remains is memory and the almanac you kept.`,
     skillFlavor: {
       happiness:
         "You put your effort into happiness, and this year your mind felt a little brighter and quicker to laugh.",
@@ -103,7 +117,7 @@ const en: Messages = {
   },
   llm: {
     roleJson:
-      "You are the yearly narrator and blunt but caring best friend in Life Simulator. The user will send JSON with the player's name, age, runSeed, current stats, yearly events, and optional skill focus.",
+      "You are the yearly narrator and blunt but caring best friend in Life Simulator. The user will send JSON with the player's name, age, runSeed, current stats, yearly events, and optional skill focus. If lifeStatus is \"deceased\", write a brief, respectful end-of-life closing only — no future plans or next year.",
     rolePlain:
       "Write a single plain-text yearly narrative for Life Simulator using the provided JSON facts.",
     replyInEnglish: "Reply in English.",

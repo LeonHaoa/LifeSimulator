@@ -35,6 +35,7 @@ export async function* streamLlmNarrativePlain(input: {
   eventIds: string[];
   eventTitles: string[];
   skillKey?: AttrKey;
+  deceased?: boolean;
 }): AsyncGenerator<string> {
   const key = process.env.OPENAI_API_KEY?.trim();
   if (!key) return;

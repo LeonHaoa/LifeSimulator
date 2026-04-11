@@ -32,6 +32,8 @@ export const GameStateSchema = z.object({
   runSeed: z.number().int().min(0).max(0xffffffff),
   age: z.number().int().min(0),
   attrs: AttrsSchema,
+  /** If set, the character died at this age; no further years may be advanced. */
+  diedAtAge: z.number().int().min(0).optional(),
   /** Set by client before advancing year; cleared in stored state after resolve. */
   lastSkillAllocation: AttrKeySchema.optional(),
   recentTags: z.array(z.string()).max(20),

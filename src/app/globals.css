@@ -1278,3 +1278,254 @@ body {
     animation: none;
   }
 }
+
+/* —— Game over curtain (death) —— */
+.life-page--deceased {
+  transition: filter 0.6s ease;
+  filter: saturate(0.72) brightness(0.92);
+}
+
+.life-panel--deceased {
+  transition: box-shadow 0.5s ease, border-color 0.5s ease;
+  box-shadow: 0 4px 32px rgba(0, 0, 0, 0.45),
+    0 0 0 1px rgba(255, 255, 255, 0.04) inset,
+    0 0 36px rgba(80, 40, 55, 0.25);
+}
+
+.life-round-badge--final {
+  background: linear-gradient(
+    135deg,
+    rgba(120, 55, 75, 0.42),
+    rgba(45, 40, 62, 0.5)
+  );
+  border-color: rgba(255, 107, 107, 0.38);
+  box-shadow: 0 0 28px rgba(255, 107, 107, 0.15),
+    0 0 0 1px rgba(0, 0, 0, 0.3) inset;
+  animation: roundBadgeFinalPulse 2.8s ease-in-out infinite;
+}
+
+@keyframes roundBadgeFinalPulse {
+  0%,
+  100% {
+    box-shadow: 0 0 22px rgba(255, 107, 107, 0.12),
+      0 0 0 1px rgba(0, 0, 0, 0.3) inset;
+  }
+  50% {
+    box-shadow: 0 0 40px rgba(124, 92, 255, 0.2),
+      0 0 0 1px rgba(0, 0, 0, 0.3) inset;
+  }
+}
+
+.stream-box--epitaph {
+  position: relative;
+  transition: border-color 0.5s ease, box-shadow 0.5s ease;
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 0 0 1px rgba(255, 107, 107, 0.12) inset,
+    0 8px 40px rgba(0, 0, 0, 0.35);
+}
+
+.stream-box--epitaph::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse at 50% 0%,
+    transparent 40%,
+    rgba(5, 6, 12, 0.55) 100%
+  );
+  animation: epitaphVignette 4s ease-in-out infinite alternate;
+}
+
+@keyframes epitaphVignette {
+  from {
+    opacity: 0.65;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.life-gameover-root {
+  position: fixed;
+  inset: 0;
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem;
+  pointer-events: none;
+}
+
+.life-gameover-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  pointer-events: auto;
+  background: radial-gradient(
+      ellipse at 50% 40%,
+      rgba(18, 14, 22, 0.65) 0%,
+      rgba(4, 5, 10, 0.88) 70%
+    ),
+    rgba(4, 5, 10, 0.72);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.life-gameover-card {
+  position: relative;
+  z-index: 1;
+  pointer-events: auto;
+  width: min(420px, 100%);
+  padding: 1.65rem 1.5rem 1.5rem;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: linear-gradient(
+    165deg,
+    rgba(32, 26, 40, 0.94) 0%,
+    rgba(16, 18, 30, 0.96) 100%
+  );
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.65),
+    0 0 0 1px rgba(255, 107, 107, 0.12) inset,
+    0 0 60px rgba(124, 92, 255, 0.12);
+  text-align: center;
+}
+
+.life-gameover-ripples {
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.life-gameover-ripple {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 140%;
+  height: 140%;
+  margin-left: -70%;
+  margin-top: -70%;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 107, 107, 0.22);
+  animation: gameoverRipple 2.4s ease-out infinite;
+  opacity: 0;
+}
+
+.life-gameover-ripple--delay {
+  animation-delay: 1.2s;
+  border-color: rgba(124, 92, 255, 0.2);
+}
+
+@keyframes gameoverRipple {
+  0% {
+    transform: scale(0.55);
+    opacity: 0.5;
+  }
+  100% {
+    transform: scale(1.05);
+    opacity: 0;
+  }
+}
+
+.life-gameover-kicker {
+  margin: 0 0 0.35rem;
+  font-size: 1.35rem;
+  color: rgba(255, 159, 110, 0.85);
+  letter-spacing: 0.2em;
+  animation: gameoverKickerFloat 2.2s ease-in-out infinite;
+}
+
+@keyframes gameoverKickerFloat {
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.85;
+  }
+  50% {
+    transform: translateY(-3px);
+    opacity: 1;
+  }
+}
+
+.life-gameover-title {
+  margin: 0 0 0.65rem;
+  font-size: clamp(1.25rem, 4vw, 1.45rem);
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #f0e8f0;
+  text-shadow: 0 0 28px rgba(255, 107, 107, 0.2);
+}
+
+.life-gameover-subtitle {
+  margin: 0 0 0.85rem;
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: rgba(232, 234, 239, 0.92);
+}
+
+.life-gameover-hint {
+  margin: 0 0 1.25rem;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.life-gameover-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.life-gameover-btn-primary {
+  width: 100%;
+  justify-content: center;
+}
+
+.life-gameover-btn-secondary {
+  width: 100%;
+  padding: 0.62rem 1rem;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font-size: 0.88rem;
+  font-weight: 650;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s, color 0.2s;
+}
+
+.life-gameover-btn-secondary:hover {
+  border-color: rgba(91, 140, 255, 0.4);
+  background: rgba(91, 140, 255, 0.1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .life-page--deceased {
+    filter: saturate(0.85) brightness(0.94);
+  }
+
+  .life-round-badge--final {
+    animation: none;
+  }
+
+  .stream-box--epitaph::after {
+    animation: none;
+    opacity: 0.85;
+  }
+
+  .life-gameover-ripple,
+  .life-gameover-kicker {
+    animation: none;
+  }
+
+  .life-gameover-kicker {
+    opacity: 0.9;
+  }
+}
